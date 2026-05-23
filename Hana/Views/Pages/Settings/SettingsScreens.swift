@@ -652,10 +652,6 @@ private struct LocalDataSettingsScreen: View {
     @Query(sort: \SearchHistoryRecord.createdAt, order: .reverse) private var searchHistory: [SearchHistoryRecord]
     @Query(sort: \AdvancedSearchHistoryRecord.createdAt, order: .reverse) private var advancedSearchHistory: [AdvancedSearchHistoryRecord]
     @Query(sort: \WatchHistoryRecord.watchDate, order: .reverse) private var watchHistory: [WatchHistoryRecord]
-    @Query(sort: \FavoriteVideoRecord.createdAt, order: .reverse) private var favorites: [FavoriteVideoRecord]
-    @Query(sort: \WatchLaterRecord.createdAt, order: .reverse) private var watchLaterItems: [WatchLaterRecord]
-    @Query(sort: \PlaylistRecord.updatedAt, order: .reverse) private var playlists: [PlaylistRecord]
-    @Query(sort: \PlaylistItemRecord.createdAt, order: .reverse) private var playlistItems: [PlaylistItemRecord]
     @Query(sort: \DownloadQueueRecord.createdAt, order: .reverse) private var downloadQueue: [DownloadQueueRecord]
     @Query(sort: \HKeyframeRecord.updatedAt, order: .reverse) private var hKeyframeRecords: [HKeyframeRecord]
     @State private var pendingDeletion: LocalDataDeletionTarget?
@@ -678,26 +674,6 @@ private struct LocalDataSettingsScreen: View {
                     Text("\(advancedSearchHistory.count)")
                 } label: {
                     Label("高级搜索历史", systemImage: "line.3.horizontal.decrease.circle")
-                }
-                LabeledContent {
-                    Text("\(favorites.count)")
-                } label: {
-                    Label("喜欢的影片", systemImage: "heart")
-                }
-                LabeledContent {
-                    Text("\(watchLaterItems.count)")
-                } label: {
-                    Label("稍后观看", systemImage: "clock")
-                }
-                LabeledContent {
-                    Text("\(playlists.count)")
-                } label: {
-                    Label("播放清单", systemImage: "list.bullet.rectangle")
-                }
-                LabeledContent {
-                    Text("\(playlistItems.count)")
-                } label: {
-                    Label("清单项目", systemImage: "rectangle.stack")
                 }
                 LabeledContent {
                     Text("\(downloadQueue.count)")
@@ -724,13 +700,6 @@ private struct LocalDataSettingsScreen: View {
                     systemImage: "magnifyingglass",
                     count: searchHistory.count + advancedSearchHistory.count,
                     target: .searchHistory,
-                    pendingDeletion: $pendingDeletion
-                )
-                LocalDataDeletionButton(
-                    title: "删除账号缓存",
-                    systemImage: "person.crop.circle.badge.xmark",
-                    count: favorites.count + watchLaterItems.count + playlists.count + playlistItems.count,
-                    target: .accountCache,
                     pendingDeletion: $pendingDeletion
                 )
                 LocalDataDeletionButton(
@@ -783,10 +752,6 @@ private struct LocalDataSettingsScreen: View {
         watchHistory.count
             + searchHistory.count
             + advancedSearchHistory.count
-            + favorites.count
-            + watchLaterItems.count
-            + playlists.count
-            + playlistItems.count
             + downloadQueue.count
             + hKeyframeRecords.count
     }
@@ -808,11 +773,6 @@ private struct LocalDataSettingsScreen: View {
         case .searchHistory:
             searchHistory.forEach(modelContext.delete)
             advancedSearchHistory.forEach(modelContext.delete)
-        case .accountCache:
-            favorites.forEach(modelContext.delete)
-            watchLaterItems.forEach(modelContext.delete)
-            playlists.forEach(modelContext.delete)
-            playlistItems.forEach(modelContext.delete)
         case .downloads:
             deleteDownloadFiles()
             downloadQueue.forEach(modelContext.delete)
@@ -822,10 +782,6 @@ private struct LocalDataSettingsScreen: View {
             watchHistory.forEach(modelContext.delete)
             searchHistory.forEach(modelContext.delete)
             advancedSearchHistory.forEach(modelContext.delete)
-            favorites.forEach(modelContext.delete)
-            watchLaterItems.forEach(modelContext.delete)
-            playlists.forEach(modelContext.delete)
-            playlistItems.forEach(modelContext.delete)
             deleteDownloadFiles()
             downloadQueue.forEach(modelContext.delete)
             hKeyframeRecords.forEach(modelContext.delete)
@@ -851,7 +807,6 @@ private struct LocalDataSettingsScreen: View {
 private enum LocalDataDeletionTarget: Identifiable {
     case watchHistory
     case searchHistory
-    case accountCache
     case downloads
     case hKeyframes
     case all
@@ -864,8 +819,6 @@ private enum LocalDataDeletionTarget: Identifiable {
             "观看历史"
         case .searchHistory:
             "搜索历史"
-        case .accountCache:
-            "账号缓存"
         case .downloads:
             "下载记录与文件"
         case .hKeyframes:
@@ -886,7 +839,7 @@ private enum LocalDataDeletionTarget: Identifiable {
         case .hKeyframes:
             "会删除本机保存的 HKeyframes。"
         case .all:
-            "会删除观看历史、搜索历史、账号缓存、播放清单、下载记录、HKeyframes，并尝试删除本地视频文件。"
+            "会删除观看历史、搜索历史、下载记录、HKeyframes，并尝试删除本地视频文件。"
         default:
             "该操作只影响本机保存的数据。"
         }
