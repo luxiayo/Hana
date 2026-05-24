@@ -88,62 +88,32 @@ private struct MobileSettingsScreen: View {
                 NavigationLink {
                     PlaybackSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "播放",
-                        description: "清晰度、字幕、手势和播放记录",
-                        systemImage: "play.rectangle",
-                        tint: .blue
-                    )
+                    SettingsNavigationRow(category: .playback)
                 }
                 NavigationLink {
                     HKeyframeSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "HKeyframes",
-                        description: "播放提醒、共享关键帧和本地管理",
-                        systemImage: "bookmark",
-                        tint: .purple
-                    )
+                    SettingsNavigationRow(category: .hKeyframes)
                 }
                 NavigationLink {
                     DownloadSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "下载",
-                        description: "下载质量、并发、网络提醒和目录",
-                        systemImage: "arrow.down.circle",
-                        tint: .green
-                    )
+                    SettingsNavigationRow(category: .downloads)
                 }
                 NavigationLink {
                     AppearanceSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "外观",
-                        description: "跟随系统，或固定浅色、深色",
-                        systemImage: "circle.lefthalf.filled",
-                        tint: .pink
-                    )
+                    SettingsNavigationRow(category: .appearance)
                 }
                 NavigationLink {
                     NetworkSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "网络与站点",
-                        description: "站点地址、代理、测速和验证",
-                        systemImage: "network",
-                        tint: .orange
-                    )
+                    SettingsNavigationRow(category: .network)
                 }
                 NavigationLink {
                     LocalDataSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "本地数据",
-                        description: "查看数量，删除本机保存的记录",
-                        systemImage: "internaldrive",
-                        tint: .gray
-                    )
+                    SettingsNavigationRow(category: .localData)
                 }
             }
 
@@ -240,60 +210,15 @@ private enum MacSettingsCategory: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     var title: String {
-        switch self {
-        case .general:
-            "常规"
-        case .playback:
-            "播放"
-        case .hKeyframes:
-            "HKeyframes"
-        case .downloads:
-            "下载"
-        case .network:
-            "网络与站点"
-        case .localData:
-            "本地数据"
-        case .about:
-            "关于"
-        }
+        settingsCategory.title
     }
 
     var systemImage: String {
-        switch self {
-        case .general:
-            "gearshape"
-        case .playback:
-            "play.rectangle"
-        case .hKeyframes:
-            "bookmark"
-        case .downloads:
-            "arrow.down.circle"
-        case .network:
-            "network"
-        case .localData:
-            "internaldrive"
-        case .about:
-            "info.circle"
-        }
+        settingsCategory.systemImage
     }
 
     var tint: Color {
-        switch self {
-        case .general:
-            .red
-        case .playback:
-            .blue
-        case .hKeyframes:
-            .purple
-        case .downloads:
-            .green
-        case .network:
-            .orange
-        case .localData:
-            .gray
-        case .about:
-            .secondary
-        }
+        settingsCategory.tint
     }
 
     var iconSize: CGFloat {
@@ -304,6 +229,25 @@ private enum MacSettingsCategory: String, CaseIterable, Identifiable {
             13
         case .general, .hKeyframes, .downloads, .network, .localData:
             14
+        }
+    }
+
+    private var settingsCategory: SettingsCategory {
+        switch self {
+        case .general:
+            .general
+        case .playback:
+            .playback
+        case .hKeyframes:
+            .hKeyframes
+        case .downloads:
+            .downloads
+        case .network:
+            .network
+        case .localData:
+            .localData
+        case .about:
+            .about
         }
     }
 }
@@ -603,23 +547,20 @@ private struct MacAboutSettingsScreen: View {
 #endif
 
 private struct SettingsNavigationRow: View {
-    let title: String
-    let description: String
-    let systemImage: String
-    let tint: Color
+    let category: SettingsCategory
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: systemImage)
+            Image(systemName: category.systemImage)
                 .font(.headline)
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
-                .background(tint, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(category.tint, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                Text(category.title)
                     .foregroundStyle(.primary)
-                Text(description)
+                Text(category.description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -627,6 +568,101 @@ private struct SettingsNavigationRow: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private enum SettingsCategory {
+    case general
+    case playback
+    case hKeyframes
+    case downloads
+    case appearance
+    case network
+    case localData
+    case about
+
+    var title: String {
+        switch self {
+        case .general:
+            "常规"
+        case .playback:
+            "播放"
+        case .hKeyframes:
+            "HKeyframes"
+        case .downloads:
+            "下载"
+        case .appearance:
+            "外观"
+        case .network:
+            "网络与站点"
+        case .localData:
+            "本地数据"
+        case .about:
+            "关于"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .general:
+            "主题、色彩和演示模式"
+        case .playback:
+            "清晰度、字幕、手势和播放记录"
+        case .hKeyframes:
+            "播放提醒、共享关键帧和本地管理"
+        case .downloads:
+            "下载质量、并发、网络提醒和目录"
+        case .appearance:
+            "跟随系统，或固定浅色、深色"
+        case .network:
+            "站点地址、代理、测速和验证"
+        case .localData:
+            "查看数量，删除本机保存的记录"
+        case .about:
+            "版本、更新检查和项目页面"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general:
+            "gearshape"
+        case .playback:
+            "play.rectangle"
+        case .hKeyframes:
+            "bookmark"
+        case .downloads:
+            "arrow.down.circle"
+        case .appearance:
+            "circle.lefthalf.filled"
+        case .network:
+            "network"
+        case .localData:
+            "internaldrive"
+        case .about:
+            "info.circle"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .general:
+            .red
+        case .playback:
+            .blue
+        case .hKeyframes:
+            .purple
+        case .downloads:
+            .green
+        case .appearance:
+            .pink
+        case .network:
+            .orange
+        case .localData:
+            .brown
+        case .about:
+            .gray
+        }
     }
 }
 
