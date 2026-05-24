@@ -27,6 +27,9 @@ enum HanaSettingsKey {
     static let networkProxyMode = "hana.settings.networkProxyMode"
     static let networkProxyHost = "hana.settings.networkProxyHost"
     static let networkProxyPort = "hana.settings.networkProxyPort"
+    static let autoCheckForUpdates = "hana.settings.autoCheckForUpdates"
+    static let lastUpdateCheckDate = "hana.settings.lastUpdateCheckDate"
+    static let updateLinkDestination = "hana.settings.updateLinkDestination"
 }
 
 enum HanaSiteBaseURL {

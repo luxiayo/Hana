@@ -88,70 +88,39 @@ private struct MobileSettingsScreen: View {
                 NavigationLink {
                     PlaybackSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "播放",
-                        description: "清晰度、字幕、手势和播放记录",
-                        systemImage: "play.rectangle",
-                        tint: .blue
-                    )
+                    SettingsNavigationRow(category: .playback)
                 }
                 NavigationLink {
                     HKeyframeSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "HKeyframes",
-                        description: "播放提醒、共享关键帧和本地管理",
-                        systemImage: "bookmark",
-                        tint: .purple
-                    )
+                    SettingsNavigationRow(category: .hKeyframes)
                 }
                 NavigationLink {
                     DownloadSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "下载",
-                        description: "下载质量、并发、网络提醒和目录",
-                        systemImage: "arrow.down.circle",
-                        tint: .green
-                    )
+                    SettingsNavigationRow(category: .downloads)
                 }
                 NavigationLink {
                     AppearanceSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "外观",
-                        description: "跟随系统，或固定浅色、深色",
-                        systemImage: "circle.lefthalf.filled",
-                        tint: .pink
-                    )
+                    SettingsNavigationRow(category: .appearance)
                 }
                 NavigationLink {
                     NetworkSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "网络与站点",
-                        description: "站点地址、代理、测速和验证",
-                        systemImage: "network",
-                        tint: .orange
-                    )
+                    SettingsNavigationRow(category: .network)
                 }
                 NavigationLink {
                     LocalDataSettingsScreen()
                 } label: {
-                    SettingsNavigationRow(
-                        title: "本地数据",
-                        description: "查看数量，删除本机保存的记录",
-                        systemImage: "internaldrive",
-                        tint: .gray
-                    )
+                    SettingsNavigationRow(category: .localData)
+                }
+                NavigationLink {
+                    AboutSettingsScreen()
+                } label: {
+                    SettingsNavigationRow(category: .about)
                 }
             }
-
-            Section {
-                SettingsAppFooter()
-            }
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
         }
         .navigationTitle("设置")
     }
@@ -223,7 +192,7 @@ private struct MacSettingsScreen: View {
         case .localData:
             LocalDataSettingsScreen()
         case .about:
-            MacAboutSettingsScreen()
+            AboutSettingsScreen()
         }
     }
 }
@@ -240,60 +209,15 @@ private enum MacSettingsCategory: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     var title: String {
-        switch self {
-        case .general:
-            "常规"
-        case .playback:
-            "播放"
-        case .hKeyframes:
-            "HKeyframes"
-        case .downloads:
-            "下载"
-        case .network:
-            "网络与站点"
-        case .localData:
-            "本地数据"
-        case .about:
-            "关于"
-        }
+        settingsCategory.title
     }
 
     var systemImage: String {
-        switch self {
-        case .general:
-            "gearshape"
-        case .playback:
-            "play.rectangle"
-        case .hKeyframes:
-            "bookmark"
-        case .downloads:
-            "arrow.down.circle"
-        case .network:
-            "network"
-        case .localData:
-            "internaldrive"
-        case .about:
-            "info.circle"
-        }
+        settingsCategory.systemImage
     }
 
     var tint: Color {
-        switch self {
-        case .general:
-            .red
-        case .playback:
-            .blue
-        case .hKeyframes:
-            .purple
-        case .downloads:
-            .green
-        case .network:
-            .orange
-        case .localData:
-            .gray
-        case .about:
-            .secondary
-        }
+        settingsCategory.tint
     }
 
     var iconSize: CGFloat {
@@ -304,6 +228,25 @@ private enum MacSettingsCategory: String, CaseIterable, Identifiable {
             13
         case .general, .hKeyframes, .downloads, .network, .localData:
             14
+        }
+    }
+
+    private var settingsCategory: SettingsCategory {
+        switch self {
+        case .general:
+            .general
+        case .playback:
+            .playback
+        case .hKeyframes:
+            .hKeyframes
+        case .downloads:
+            .downloads
+        case .network:
+            .network
+        case .localData:
+            .localData
+        case .about:
+            .about
         }
     }
 }
@@ -589,37 +532,121 @@ private struct MacThemeColorPreview: View {
     }
 }
 
-private struct MacAboutSettingsScreen: View {
+#endif
+
+private struct AboutSettingsScreen: View {
+    @Environment(HanaServices.self) private var services
+    @Environment(\.openURL) private var openURL
+    @AppStorage(HanaSettingsKey.autoCheckForUpdates) private var autoCheckForUpdates = true
+    @AppStorage(HanaSettingsKey.updateLinkDestination) private var updateLinkDestination = HanaUpdateLinkDestination.defaultValue
+    @State private var toastMessage: HanaToastMessage?
+    @State private var alertMessage: HanaAlertMessage?
+    @State private var availableUpdate: HanaAvailableUpdate?
+
     var body: some View {
         Form {
             Section {
                 SettingsAppFooter()
             }
+
+            Section {
+                Toggle(isOn: $autoCheckForUpdates) {
+                    Label("自动检查", systemImage: "arrow.triangle.2.circlepath")
+                }
+
+#if os(iOS)
+                Picker(selection: $updateLinkDestination) {
+                    ForEach(HanaUpdateLinkDestination.allCases) { destination in
+                        Text(destination.title).tag(destination.rawValue)
+                    }
+                } label: {
+                    Label("打开方式", systemImage: "arrow.up.forward.app")
+                }
+#endif
+
+                Button {
+                    Task { await checkForUpdates() }
+                } label: {
+                    if services.updateChecker.isChecking {
+                        Label("检查中", systemImage: "hourglass")
+                    } else {
+                        Label("检查更新", systemImage: "arrow.clockwise")
+                    }
+                }
+                .disabled(services.updateChecker.isChecking)
+            } header: {
+                Text("更新")
+            } footer: {
+                Text(updateFooterText)
+            }
+
+            Section("项目") {
+                Button {
+                    openURL(HanaUpdateChecker.websiteURL)
+                } label: {
+                    Label("项目网站", systemImage: "safari")
+                }
+
+                Button {
+                    openURL(HanaUpdateChecker.repositoryURL)
+                } label: {
+                    Label("GitHub 仓库", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+
+                Button {
+                    openURL(HanaUpdateChecker.releasesURL)
+                } label: {
+                    Label("Releases 页面", systemImage: "tag")
+                }
+            }
         }
         .formStyle(.grouped)
         .navigationTitle("关于")
+        .hanaToast($toastMessage)
+        .hanaFeedbackAlert($alertMessage)
+        .hanaUpdateAlert(update: $availableUpdate)
+    }
+
+    private var updateFooterText: String {
+#if os(iOS)
+        "开启后，应用会每天检查更新。选择侧载工具时，发现新版可跳转对应 App。"
+#else
+        "开启后，应用会每天检查更新。"
+#endif
+    }
+
+    private func checkForUpdates() async {
+        do {
+            let result = try await services.updateChecker.checkManually()
+            switch result {
+            case .updateAvailable(let update):
+                availableUpdate = update
+            case .upToDate:
+                toastMessage = .success("已是最新版本")
+            case .noRelease:
+                alertMessage = HanaAlertMessage(title: "暂无 Release", message: "GitHub 上还没有可用于检查的正式 Release。")
+            }
+        } catch {
+            alertMessage = .error(error.localizedDescription)
+        }
     }
 }
-#endif
 
 private struct SettingsNavigationRow: View {
-    let title: String
-    let description: String
-    let systemImage: String
-    let tint: Color
+    let category: SettingsCategory
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: systemImage)
+            Image(systemName: category.systemImage)
                 .font(.headline)
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 30)
-                .background(tint, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(category.tint, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                Text(category.title)
                     .foregroundStyle(.primary)
-                Text(description)
+                Text(category.description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -627,6 +654,101 @@ private struct SettingsNavigationRow: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private enum SettingsCategory {
+    case general
+    case playback
+    case hKeyframes
+    case downloads
+    case appearance
+    case network
+    case localData
+    case about
+
+    var title: String {
+        switch self {
+        case .general:
+            "常规"
+        case .playback:
+            "播放"
+        case .hKeyframes:
+            "HKeyframes"
+        case .downloads:
+            "下载"
+        case .appearance:
+            "外观"
+        case .network:
+            "网络与站点"
+        case .localData:
+            "本地数据"
+        case .about:
+            "关于"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .general:
+            "主题、色彩和演示模式"
+        case .playback:
+            "清晰度、字幕、手势和播放记录"
+        case .hKeyframes:
+            "播放提醒、共享关键帧和本地管理"
+        case .downloads:
+            "下载质量、并发、网络提醒和目录"
+        case .appearance:
+            "跟随系统，或固定浅色、深色"
+        case .network:
+            "站点地址、代理、测速和验证"
+        case .localData:
+            "查看数量，删除本机保存的记录"
+        case .about:
+            "版本、更新检查和项目页面"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general:
+            "gearshape"
+        case .playback:
+            "play.rectangle"
+        case .hKeyframes:
+            "bookmark"
+        case .downloads:
+            "arrow.down.circle"
+        case .appearance:
+            "circle.lefthalf.filled"
+        case .network:
+            "network"
+        case .localData:
+            "internaldrive"
+        case .about:
+            "info.circle"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .general:
+            .red
+        case .playback:
+            .blue
+        case .hKeyframes:
+            .purple
+        case .downloads:
+            .green
+        case .appearance:
+            .pink
+        case .network:
+            .orange
+        case .localData:
+            .brown
+        case .about:
+            .gray
+        }
     }
 }
 

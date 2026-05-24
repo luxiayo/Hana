@@ -15,6 +15,7 @@ final class HanaServices {
     let networkMonitor: HanaNetworkMonitor
     let profileAvatarStore: HanaProfileAvatarStore
     let videoPlaybackStore: HanaVideoPlaybackStore
+    let updateChecker: HanaUpdateChecker
 #if os(iOS)
     @ObservationIgnored private var memoryWarningObserver: NSObjectProtocol?
 #endif
@@ -30,6 +31,7 @@ final class HanaServices {
         self.downloadClient = HanimeDownloadClient(httpClient: httpClient)
         self.networkMonitor = HanaNetworkMonitor()
         self.videoPlaybackStore = HanaVideoPlaybackStore()
+        self.updateChecker = HanaUpdateChecker()
         self.profileAvatarStore = HanaProfileAvatarStore(
             imagePipeline: imagePipeline,
             makeImageURLRequest: httpClient.imageURLRequest(for:cachePolicy:timeoutInterval:)
