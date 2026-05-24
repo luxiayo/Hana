@@ -9,6 +9,7 @@ struct VideoDetailScreen: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage(HanaSettingsKey.defaultVideoQuality) private var defaultVideoQuality = HanaVideoQualityPreference.defaultValue.rawValue
     let videoCode: String
+    var isNavigationTop = true
     @State private var state: LoadableState<HanimeVideo> = .idle
     @State private var loadingVideoCode: String?
     @State private var selectedTopTab: HanaVideoDetailTopTab = .details
@@ -76,7 +77,7 @@ struct VideoDetailScreen: View {
 
             if layout.usesSideBySideLayout {
                 HStack(alignment: .top, spacing: layout.columnSpacing) {
-                    ScrollView {
+                    ScrollView(.vertical, showsIndicators: false) {
                         primaryColumn(video)
                             .frame(width: layout.playerColumnWidth, alignment: .topLeading)
                     }
@@ -137,7 +138,8 @@ struct VideoDetailScreen: View {
                 video: video,
                 selectedLinkID: $selectedPlaybackLinkID,
                 activePlayer: $activePlayer,
-                isFullscreenPresented: $isPlayerFullscreenPresented
+                isFullscreenPresented: $isPlayerFullscreenPresented,
+                isActive: isNavigationTop
             )
             VideoArtistSection(video: video)
             VideoDetailHeader(video: video)

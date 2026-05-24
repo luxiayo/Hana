@@ -60,9 +60,7 @@ struct SearchScreen: View {
                             }
 
                             ForEach(normalVideos) { video in
-                                NavigationLink {
-                                    VideoDetailScreen(videoCode: video.videoCode)
-                                } label: {
+                                NavigationLink(value: HanaRoute.video(video.videoCode)) {
                                     HanaVideoListRow(info: video)
                                         .padding(10)
                                         .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
@@ -298,9 +296,7 @@ private struct SearchVideoGridLinks: View {
     var body: some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
             ForEach(videos) { video in
-                NavigationLink {
-                    VideoDetailScreen(videoCode: video.videoCode)
-                } label: {
+                NavigationLink(value: HanaRoute.video(video.videoCode)) {
                     HanaVideoGridCard(info: video)
                 }
                 .buttonStyle(.plain)

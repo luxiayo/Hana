@@ -187,25 +187,15 @@ private struct HomeHeroBackgroundLayer: View {
         let foregroundStyle = HomeHeroForegroundStyle.preferred(for: foregroundAreaHeight)
 
         ZStack(alignment: .topLeading) {
-            CoverView(
-                url: banner.coverURL,
-                contentMode: .fill,
-                alignment: .top,
-                placeholderCornerRadius: 0
+            HomeHeroBannerBackground(
+                banner: banner,
+                width: width,
+                stretchedHeight: stretchedHeight,
+                parallaxOffset: parallaxOffset,
+                blurRadius: blurRadius,
+                dimOpacity: dimOpacity,
+                edgeGradient: edgeGradient
             )
-            .frame(width: width, height: stretchedHeight)
-            .visualEffect { effect, _ in
-                effect
-                    .offset(y: parallaxOffset)
-                    .blur(radius: blurRadius)
-            }
-
-            Rectangle()
-                .fill(.black.opacity(dimOpacity))
-
-            Rectangle()
-                .fill(edgeGradient)
-                .frame(height: stretchedHeight)
 
             HomeHeroForeground(
                 banner: banner,
@@ -223,7 +213,7 @@ private struct HomeHeroBackgroundLayer: View {
             .offset(y: -progress * 20)
         }
         .frame(width: width, height: stretchedHeight, alignment: .top)
-        .clipped()
+        .homeHeroBannerMacOSLayerClipping()
         .offset(y: -pullDistance)
     }
 
@@ -253,6 +243,43 @@ private struct HomeHeroBackgroundLayer: View {
             startPoint: .top,
             endPoint: .bottom
         )
+    }
+}
+
+private struct HomeHeroBannerBackground: View {
+    let banner: HanimeBanner
+    let width: CGFloat
+    let stretchedHeight: CGFloat
+    let parallaxOffset: CGFloat
+    let blurRadius: CGFloat
+    let dimOpacity: CGFloat
+    let edgeGradient: LinearGradient
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            CoverView(
+                url: banner.coverURL,
+                contentMode: .fill,
+                alignment: .top,
+                placeholderCornerRadius: 0
+            )
+            .frame(width: width, height: stretchedHeight)
+            .visualEffect { effect, _ in
+                effect
+                    .offset(y: parallaxOffset)
+                    .blur(radius: blurRadius)
+            }
+
+            Rectangle()
+                .fill(.black.opacity(dimOpacity))
+
+            Rectangle()
+                .fill(edgeGradient)
+                .frame(height: stretchedHeight)
+        }
+        .frame(width: width, height: stretchedHeight, alignment: .top)
+        .clipped()
+        .homeHeroBannerMacOSBackgroundExtension()
     }
 }
 
@@ -452,17 +479,34 @@ private struct HomeContentSurface: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background {
-            UnevenRoundedRectangle(
-                cornerRadii: .init(
-                    topLeading: cornerRadius,
-                    bottomLeading: 0,
-                    bottomTrailing: 0,
-                    topTrailing: cornerRadius
-                ),
-                style: .continuous
-            )
-            .fill(homeHeroSystemBackground)
+            HomeContentSurfaceBackground(cornerRadius: cornerRadius)
         }
+    }
+}
+
+private struct HomeContentSurfaceBackground: View {
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        UnevenRoundedRectangle(
+            cornerRadii: .init(
+                topLeading: leadingCornerRadius,
+                bottomLeading: 0,
+                bottomTrailing: 0,
+                topTrailing: cornerRadius
+            ),
+            style: .continuous
+        )
+        .fill(homeHeroSystemBackground)
+        .homeContentSurfaceMacOSBackgroundExtension()
+    }
+
+    private var leadingCornerRadius: CGFloat {
+#if os(macOS)
+        0
+#else
+        cornerRadius
+#endif
     }
 }
 
@@ -475,25 +519,82 @@ struct HomeSectionsView: View {
     var body: some View {
         LazyVStack(alignment: .leading, spacing: sectionSpacing) {
             ForEach(sections) { section in
-                VStack(alignment: .leading, spacing: sectionTitleSpacing) {
-                    Text(section.title)
-                        .font(.headline)
-                        .padding(.horizontal)
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        LazyHStack(spacing: railSpacing) {
-                            ForEach(section.videos) { video in
-                                NavigationLink(value: HanaRoute.video(video.videoCode)) {
-                                    HanaVideoGridCard(info: video)
-                                        .frame(width: HanaVideoGridCard.preferredWidth(for: video))
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal)
-                    }
-                }
+                HomeSectionView(
+                    section: section,
+                    sectionTitleSpacing: sectionTitleSpacing,
+                    railSpacing: railSpacing
+                )
             }
         }
+    }
+}
+
+private struct HomeSectionView: View {
+    let section: HanimeHomeSection
+    let sectionTitleSpacing: CGFloat
+    let railSpacing: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: sectionTitleSpacing) {
+            Text(section.title)
+                .font(.headline)
+                .padding(.horizontal)
+
+            HomeSectionVideosView(videos: section.videos, railSpacing: railSpacing)
+        }
+    }
+}
+
+private struct HomeSectionVideosView: View {
+    let videos: [HanimeInfo]
+    let railSpacing: CGFloat
+
+    var body: some View {
+#if os(macOS)
+        HanaVideoGridLinks(videos: videos)
+            .padding(.horizontal)
+#else
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: railSpacing) {
+                ForEach(videos) { video in
+                    NavigationLink(value: HanaRoute.video(video.videoCode)) {
+                        HanaVideoGridCard(info: video)
+                            .frame(width: HanaVideoGridCard.preferredWidth(for: video))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal)
+        }
+#endif
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func homeHeroBannerMacOSBackgroundExtension() -> some View {
+#if os(macOS)
+        backgroundExtensionEffect()
+#else
+        self
+#endif
+    }
+
+    @ViewBuilder
+    func homeHeroBannerMacOSLayerClipping() -> some View {
+#if os(macOS)
+        self
+#else
+        clipped()
+#endif
+    }
+
+    @ViewBuilder
+    func homeContentSurfaceMacOSBackgroundExtension() -> some View {
+#if os(macOS)
+        backgroundExtensionEffect()
+#else
+        self
+#endif
     }
 }

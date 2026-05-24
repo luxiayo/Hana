@@ -20,8 +20,85 @@ struct DownloadsScreen: View {
     @State private var movingDownloadItem: DownloadQueueRecord?
     @State private var newGroupName = ""
     @State private var isSelectionModeActive = false
+    @State private var selectedDownloadIDs = Set<String>()
+    @State private var isSelectedDeleteConfirmationPresented = false
 
     var body: some View {
+        content
+            .navigationTitle("已下载的视频")
+            .hanaToast($toastMessage)
+            .hanaFeedbackAlert($alertMessage)
+            .toolbar { downloadToolbar }
+            .sheet(item: $localPlayback) { playback in
+                LocalVideoPlayerSheet(playback: playback)
+            }
+            .sheet(isPresented: $isGroupManagerPresented) {
+                DownloadGroupManagementSheet(
+                    groupNames: downloadGroupNames,
+                    onRename: renameDownloadGroup,
+                    onDelete: deleteDownloadGroup
+                )
+            }
+            .sheet(item: $movingDownloadItem) { item in
+                DownloadMoveGroupSheet(
+                    item: item,
+                    groupNames: downloadGroupNames,
+                    onMove: moveDownloadItem
+                )
+            }
+            .alert("新建分组", isPresented: $isCreateGroupPresented) {
+                TextField("分组名称", text: $newGroupName)
+                Button("创建") {
+                    createDownloadGroup(named: newGroupName)
+                    newGroupName = ""
+                }
+                .disabled(normalizedDownloadGroupName(newGroupName) == defaultDownloadGroupName)
+                Button("取消", role: .cancel) {
+                    newGroupName = ""
+                }
+            }
+            .task {
+                await synchronizeDownloadRecords(showStatus: false)
+            }
+            .alert("当前网络可能按流量计费", isPresented: mobileDataAlertBinding) {
+                Button("继续下载") {
+                    continueAfterMobileDataWarning()
+                }
+                Button("取消", role: .cancel) {
+                    mobileDataDownloadID = nil
+                }
+            } message: {
+                Text("设置里开启了蜂窝网络下载前提醒。")
+            }
+            .confirmationDialog("删除所选下载记录？", isPresented: $isSelectedDeleteConfirmationPresented, titleVisibility: .visible) {
+                Button("删除 \(selectedDownloadIDs.count) 个文件", role: .destructive) {
+                    deleteSelected()
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("会取消下载任务，并删除已经下载的本地文件。")
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if visibleDownloadQueue.isEmpty {
+            ContentUnavailableView {
+                Label("暂无已下载视频", systemImage: "arrow.down.circle")
+            } description: {
+                Text("已下载或扫描到的本地视频会显示在这里。")
+            } actions: {
+                Button(action: scanLocalDownloads) {
+                    Label("扫描本地文件", systemImage: "folder.badge.plus")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        } else {
+            downloadList
+        }
+    }
+
+    private var downloadList: some View {
         List {
             DownloadQueueList(
                 items: queue,
@@ -34,88 +111,56 @@ struct DownloadsScreen: View {
                 onDelete: delete,
                 onMoveGroup: { item in
                     movingDownloadItem = item
-                }
+                },
+                isEditing: isEditing,
+                selectedDownloadIDs: selectedDownloadIDs,
+                onToggleSelection: toggleSelection
             )
-        }
-        .navigationTitle("已下载的视频")
-        .hanaToast($toastMessage)
-        .hanaFeedbackAlert($alertMessage)
-        .toolbar { downloadToolbar }
-        .sheet(item: $localPlayback) { playback in
-            LocalVideoPlayerSheet(playback: playback)
-        }
-        .sheet(isPresented: $isGroupManagerPresented) {
-            DownloadGroupManagementSheet(
-                groupNames: downloadGroupNames,
-                onRename: renameDownloadGroup,
-                onDelete: deleteDownloadGroup
-            )
-        }
-        .sheet(item: $movingDownloadItem) { item in
-            DownloadMoveGroupSheet(
-                item: item,
-                groupNames: downloadGroupNames,
-                onMove: moveDownloadItem
-            )
-        }
-        .alert("新建分组", isPresented: $isCreateGroupPresented) {
-            TextField("分组名称", text: $newGroupName)
-            Button("创建") {
-                createDownloadGroup(named: newGroupName)
-                newGroupName = ""
-            }
-            .disabled(normalizedDownloadGroupName(newGroupName) == defaultDownloadGroupName)
-            Button("取消", role: .cancel) {
-                newGroupName = ""
-            }
-        }
-        .task {
-            await synchronizeDownloadRecords(showStatus: false)
-        }
-        .alert("当前网络可能按流量计费", isPresented: mobileDataAlertBinding) {
-            Button("继续下载") {
-                continueAfterMobileDataWarning()
-            }
-            Button("取消", role: .cancel) {
-                mobileDataDownloadID = nil
-            }
-        } message: {
-            Text("设置里开启了蜂窝网络下载前提醒。")
         }
     }
 
     @ToolbarContentBuilder
     private var downloadToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            Button {
-                newGroupName = ""
-                isCreateGroupPresented = true
-            } label: {
-                Label("新建分组", systemImage: "folder.badge.plus")
-            }
+        if !visibleDownloadQueue.isEmpty {
+            ToolbarItemGroup(placement: .primaryAction) {
+                if isEditing {
+                    HanaToolbarIconButton(title: "退出选择", systemImage: "xmark", action: toggleEditMode)
 
-            Button(action: toggleEditMode) {
-                Label(
-                    isEditing ? "完成" : "编辑",
-                    systemImage: isEditing ? "checkmark.circle" : "square.and.pencil"
-                )
-            }
-            .accessibilityLabel(isEditing ? "完成编辑" : "编辑")
-            .disabled(queue.isEmpty)
-        }
+                    HanaToolbarIconButton(
+                        title: areAllVisibleDownloadsSelected ? "取消全选" : "全选",
+                        systemImage: areAllVisibleDownloadsSelected ? "circle" : "checkmark.circle"
+                    ) {
+                        toggleAll()
+                    }
+                    .disabled(visibleDownloadQueue.isEmpty)
 
-        ToolbarItem(placement: .secondaryAction) {
-            Button {
-                isGroupManagerPresented = true
-            } label: {
-                Label("分组管理", systemImage: "folder")
-            }
-            .disabled(queue.isEmpty && downloadGroupNames.count <= 1)
-        }
+                    HanaToolbarIconButton(title: "删除所选 \(selectedDownloadIDs.count)", systemImage: "trash", role: .destructive) {
+                        isSelectedDeleteConfirmationPresented = true
+                    }
+                    .disabled(selectedDownloadIDs.isEmpty)
+                } else {
+                    Button {
+                        newGroupName = ""
+                        isCreateGroupPresented = true
+                    } label: {
+                        Label("新建分组", systemImage: "folder.badge.plus")
+                    }
 
-        ToolbarItem(placement: .secondaryAction) {
-            Button(action: scanLocalDownloads) {
-                Label("扫描本地文件", systemImage: "folder.badge.plus")
+                    Button {
+                        isGroupManagerPresented = true
+                    } label: {
+                        Label("分组管理", systemImage: "folder")
+                    }
+                    .disabled(queue.isEmpty && downloadGroupNames.count <= 1)
+
+                    Button(action: scanLocalDownloads) {
+                        Label("扫描本地文件", systemImage: "folder.badge.plus")
+                    }
+
+                    Button(action: toggleEditMode) {
+                        Label("选择", systemImage: "checklist")
+                    }
+                }
             }
         }
     }
@@ -132,9 +177,40 @@ struct DownloadsScreen: View {
         isSelectionModeActive
     }
 
+    private var visibleDownloadQueue: [DownloadQueueRecord] {
+        queue.filter(\.shouldAppearInDownloads)
+    }
+
+    private var areAllVisibleDownloadsSelected: Bool {
+        let ids = Set(visibleDownloadQueue.map(\.id))
+        return !ids.isEmpty && selectedDownloadIDs.isSuperset(of: ids)
+    }
+
     private func toggleEditMode() {
         withAnimation(.smooth(duration: 0.2)) {
-            isSelectionModeActive.toggle()
+            if isSelectionModeActive {
+                isSelectionModeActive = false
+                selectedDownloadIDs.removeAll()
+            } else {
+                isSelectionModeActive = true
+            }
+        }
+    }
+
+    private func toggleSelection(_ id: String) {
+        if selectedDownloadIDs.contains(id) {
+            selectedDownloadIDs.remove(id)
+        } else {
+            selectedDownloadIDs.insert(id)
+        }
+    }
+
+    private func toggleAll() {
+        let ids = Set(visibleDownloadQueue.map(\.id))
+        if selectedDownloadIDs.isSuperset(of: ids) {
+            selectedDownloadIDs.subtract(ids)
+        } else {
+            selectedDownloadIDs.formUnion(ids)
         }
     }
 
@@ -241,8 +317,20 @@ struct DownloadsScreen: View {
     }
 
     private func delete(_ offsets: IndexSet) {
-        for index in offsets {
-            let item = queue[index]
+        delete(items: offsets.compactMap { index in
+            queue.indices.contains(index) ? queue[index] : nil
+        })
+    }
+
+    private func deleteSelected() {
+        let selectedItems = queue.filter { selectedDownloadIDs.contains($0.id) }
+        delete(items: selectedItems)
+        selectedDownloadIDs.removeAll()
+        isSelectionModeActive = false
+    }
+
+    private func delete(items: [DownloadQueueRecord]) {
+        for item in items {
             services.downloadClient.cancel(id: item.id)
             if let localURL = localFileURL(for: item) {
                 try? services.downloadClient.deleteLocalDownload(fileURL: localURL)
@@ -431,6 +519,9 @@ private struct DownloadQueueList: View {
     let onPlay: (DownloadQueueRecord, URL) -> Void
     let onDelete: (IndexSet) -> Void
     let onMoveGroup: (DownloadQueueRecord) -> Void
+    var isEditing = false
+    var selectedDownloadIDs = Set<String>()
+    var onToggleSelection: (String) -> Void = { _ in }
     @State private var collapsedGroupIDs = Set<String>()
 
     var body: some View {
@@ -442,27 +533,44 @@ private struct DownloadQueueList: View {
             Section {
                 ForEach(groups) { group in
                     DisclosureGroup(isExpanded: groupExpansionBinding(group.id)) {
-                        ForEach(group.items) { item in
-                            DownloadQueueRow(
-                                item: item,
-                                progress: progressProvider(item.id),
-                                isDownloading: isDownloadingProvider(item.id),
-                                onStart: {
-                                    onStart(item)
-                                },
-                                onCancel: {
-                                    onCancel(item)
-                                },
-                                onPlay: { url in
-                                    onPlay(item, url)
-                                },
-                                onMoveGroup: {
-                                    onMoveGroup(item)
+                        if isEditing {
+                            ForEach(group.items) { item in
+                                HanaSelectableRow(
+                                    isSelected: selectedDownloadIDs.contains(item.id),
+                                    accessibilityLabel: item.title
+                                ) {
+                                    onToggleSelection(item.id)
+                                } content: {
+                                    DownloadQueueSelectionRow(
+                                        item: item,
+                                        progress: progressProvider(item.id),
+                                        isDownloading: isDownloadingProvider(item.id)
+                                    )
                                 }
-                            )
-                        }
-                        .onDelete { offsets in
-                            onDelete(globalOffsets(for: group, offsets: offsets))
+                            }
+                        } else {
+                            ForEach(group.items) { item in
+                                DownloadQueueRow(
+                                    item: item,
+                                    progress: progressProvider(item.id),
+                                    isDownloading: isDownloadingProvider(item.id),
+                                    onStart: {
+                                        onStart(item)
+                                    },
+                                    onCancel: {
+                                        onCancel(item)
+                                    },
+                                    onPlay: { url in
+                                        onPlay(item, url)
+                                    },
+                                    onMoveGroup: {
+                                        onMoveGroup(item)
+                                    }
+                                )
+                            }
+                            .onDelete { offsets in
+                                onDelete(globalOffsets(for: group, offsets: offsets))
+                            }
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
@@ -538,6 +646,62 @@ private struct DownloadQueueGroup: Identifiable {
     let id: String
     let title: String
     let items: [DownloadQueueRecord]
+}
+
+private struct DownloadQueueSelectionRow: View {
+    let item: DownloadQueueRecord
+    let progress: Double?
+    let isDownloading: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(item.title)
+                .font(.headline)
+                .lineLimit(2)
+
+            HStack(spacing: 12) {
+                Label(item.quality, systemImage: "slider.horizontal.3")
+                Label(item.status, systemImage: statusIcon)
+                if let fileSizeText {
+                    Text(fileSizeText)
+                }
+            }
+            .labelStyle(DownloadInfoLabelStyle())
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            if item.status == "下载中" {
+                ProgressView(value: progress ?? item.progress)
+            }
+
+            if isDownloading {
+                Text("下载中")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var statusIcon: String {
+        switch item.status {
+        case "已完成":
+            "checkmark.circle"
+        case "下载中":
+            "arrow.down.circle"
+        case "下载失败":
+            "exclamationmark.triangle"
+        case "已取消":
+            "xmark.circle"
+        default:
+            "clock"
+        }
+    }
+
+    private var fileSizeText: String? {
+        guard item.status == "已完成" else { return nil }
+        return item.errorMessage
+    }
 }
 
 private struct DownloadQueueRow: View {

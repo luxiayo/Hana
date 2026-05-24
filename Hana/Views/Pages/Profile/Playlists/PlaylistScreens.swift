@@ -177,14 +177,20 @@ struct PlaylistsScreen: View {
             } else if playlists.isEmpty {
                 ContentUnavailableView("没有符合条件的播放清单", systemImage: "line.3.horizontal.decrease.circle")
             } else {
-                List(selection: $selectedListCodes) {
+                List {
                     if isEditing {
                         ForEach(playlists) { playlist in
-                            RemotePlaylistRow(playlist: playlist)
-                                .tag(playlist.listCode)
-                                .onAppear {
-                                    preloadNextPlaylistPageIfNeeded(after: playlist, in: playlists, maxPage: page.maxPage)
-                                }
+                            HanaSelectableRow(
+                                isSelected: selectedListCodes.contains(playlist.listCode),
+                                accessibilityLabel: playlist.title
+                            ) {
+                                togglePlaylistSelection(playlist.listCode)
+                            } content: {
+                                RemotePlaylistRow(playlist: playlist)
+                            }
+                            .onAppear {
+                                preloadNextPlaylistPageIfNeeded(after: playlist, in: playlists, maxPage: page.maxPage)
+                            }
                         }
                     } else {
                         ForEach(playlists) { playlist in
@@ -266,6 +272,14 @@ struct PlaylistsScreen: View {
             selectedListCodes.removeAll()
         } else {
             isSelectionModeActive = true
+        }
+    }
+
+    private func togglePlaylistSelection(_ listCode: String) {
+        if selectedListCodes.contains(listCode) {
+            selectedListCodes.remove(listCode)
+        } else {
+            selectedListCodes.insert(listCode)
         }
     }
 
@@ -688,7 +702,7 @@ struct RemotePlaylistDetailScreen: View {
             } else if videos.isEmpty {
                 ContentUnavailableView("没有符合条件的视频", systemImage: "line.3.horizontal.decrease.circle")
             } else {
-                List(selection: $selectedVideoCodes) {
+                List {
                     if let description = page.description {
                         Section {
                             Text(description)
@@ -700,11 +714,17 @@ struct RemotePlaylistDetailScreen: View {
                     Section {
                         if isEditing {
                             ForEach(videos) { video in
-                                playlistVideoSelectionRow(video)
-                                    .tag(video.videoCode)
-                                    .onAppear {
-                                        preloadNextPlaylistItemPageIfNeeded(after: video, in: videos, maxPage: page.maxPage)
-                                    }
+                                HanaSelectableRow(
+                                    isSelected: selectedVideoCodes.contains(video.videoCode),
+                                    accessibilityLabel: video.title
+                                ) {
+                                    toggleVideoSelection(video.videoCode)
+                                } content: {
+                                    playlistVideoSelectionRow(video)
+                                }
+                                .onAppear {
+                                    preloadNextPlaylistItemPageIfNeeded(after: video, in: videos, maxPage: page.maxPage)
+                                }
                             }
                         } else {
                             let portraitVideos = videos.filter { $0.style == .compact }
@@ -850,6 +870,14 @@ struct RemotePlaylistDetailScreen: View {
             selectedVideoCodes.removeAll()
         } else {
             isSelectionModeActive = true
+        }
+    }
+
+    private func toggleVideoSelection(_ videoCode: String) {
+        if selectedVideoCodes.contains(videoCode) {
+            selectedVideoCodes.remove(videoCode)
+        } else {
+            selectedVideoCodes.insert(videoCode)
         }
     }
 

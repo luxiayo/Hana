@@ -8,11 +8,92 @@ struct WatchHistoryScreen: View {
     @Query(sort: \WatchHistoryRecord.watchDate, order: .reverse) private var watchHistory: [WatchHistoryRecord]
     @State private var isClearConfirmationPresented = false
     @State private var isSelectionModeActive = false
+    @State private var selectedVideoCodes = Set<String>()
+    @State private var isSelectedDeleteConfirmationPresented = false
 
     var body: some View {
+        content
+            .navigationTitle("观看记录")
+            .toolbar {
+                if shouldShowToolbarActions {
+                    watchHistoryToolbar
+                }
+            }
+            .confirmationDialog("清空全部观看记录？", isPresented: $isClearConfirmationPresented, titleVisibility: .visible) {
+                Button("清空", role: .destructive) {
+                    clearAll()
+                }
+                Button("取消", role: .cancel) {}
+            }
+            .confirmationDialog("删除所选观看记录？", isPresented: $isSelectedDeleteConfirmationPresented, titleVisibility: .visible) {
+                Button("删除 \(selectedVideoCodes.count) 条记录", role: .destructive) {
+                    deleteSelected()
+                }
+                Button("取消", role: .cancel) {}
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if visibleWatchHistory.isEmpty {
+            ContentUnavailableView("暂无观看记录", systemImage: "clock.arrow.circlepath")
+        } else {
+            watchHistoryList
+        }
+    }
+
+    private var watchHistoryList: some View {
         List {
-            if visibleWatchHistory.isEmpty {
-                ContentUnavailableView("观看记录", systemImage: "clock.arrow.circlepath")
+            watchHistoryRows
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var watchHistoryToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            if isEditing {
+                HanaToolbarIconButton(title: "退出选择", systemImage: "xmark", action: toggleEditMode)
+
+                HanaToolbarIconButton(
+                    title: areAllVisibleItemsSelected ? "取消全选" : "全选",
+                    systemImage: areAllVisibleItemsSelected ? "circle" : "checkmark.circle"
+                ) {
+                    toggleAll()
+                }
+                .disabled(visibleWatchHistory.isEmpty)
+
+                HanaToolbarIconButton(title: "删除所选 \(selectedVideoCodes.count)", systemImage: "trash", role: .destructive) {
+                    isSelectedDeleteConfirmationPresented = true
+                }
+                .disabled(selectedVideoCodes.isEmpty)
+            } else {
+                Button(action: toggleEditMode) {
+                    Label("选择", systemImage: "checklist")
+                }
+                .disabled(visibleWatchHistory.isEmpty)
+
+                Button(role: .destructive) {
+                    isClearConfirmationPresented = true
+                } label: {
+                    Label("清空观看记录", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    private var watchHistoryRows: some View {
+        Group {
+            if isEditing {
+                ForEach(visibleWatchHistory) { item in
+                    HanaSelectableRow(
+                        isSelected: selectedVideoCodes.contains(item.videoCode),
+                        accessibilityLabel: item.title
+                    ) {
+                        toggleSelection(item.videoCode)
+                    } content: {
+                        WatchHistoryRow(item: item)
+                    }
+                }
             } else {
                 ForEach(visibleWatchHistory) { item in
                     NavigationLink(value: HanaRoute.video(item.videoCode)) {
@@ -29,46 +110,50 @@ struct WatchHistoryScreen: View {
                 .onDelete(perform: delete)
             }
         }
-        .navigationTitle("观看记录")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: toggleEditMode) {
-                    Label(
-                        isEditing ? "完成" : "编辑",
-                        systemImage: isEditing ? "checkmark.circle" : "square.and.pencil"
-                    )
-                }
-                .accessibilityLabel(isEditing ? "完成编辑" : "编辑")
-                .disabled(visibleWatchHistory.isEmpty)
-            }
-            ToolbarItem(placement: .secondaryAction) {
-                Button(role: .destructive) {
-                    isClearConfirmationPresented = true
-                } label: {
-                    Label("清空观看记录", systemImage: "trash")
-                }
-                .disabled(visibleWatchHistory.isEmpty)
-            }
-        }
-        .confirmationDialog("清空全部观看记录？", isPresented: $isClearConfirmationPresented, titleVisibility: .visible) {
-            Button("清空", role: .destructive) {
-                clearAll()
-            }
-            Button("取消", role: .cancel) {}
-        }
     }
 
     private var isEditing: Bool {
         isSelectionModeActive
     }
 
+    private var shouldShowToolbarActions: Bool {
+        !visibleWatchHistory.isEmpty
+    }
+
     private var visibleWatchHistory: [WatchHistoryRecord] {
         watchHistory.filter(\.isHistoryEligible)
     }
 
+    private var areAllVisibleItemsSelected: Bool {
+        let codes = Set(visibleWatchHistory.map(\.videoCode))
+        return !codes.isEmpty && selectedVideoCodes.isSuperset(of: codes)
+    }
+
     private func toggleEditMode() {
         withAnimation(.smooth(duration: 0.2)) {
-            isSelectionModeActive.toggle()
+            if isSelectionModeActive {
+                isSelectionModeActive = false
+                selectedVideoCodes.removeAll()
+            } else {
+                isSelectionModeActive = true
+            }
+        }
+    }
+
+    private func toggleSelection(_ videoCode: String) {
+        if selectedVideoCodes.contains(videoCode) {
+            selectedVideoCodes.remove(videoCode)
+        } else {
+            selectedVideoCodes.insert(videoCode)
+        }
+    }
+
+    private func toggleAll() {
+        let codes = Set(visibleWatchHistory.map(\.videoCode))
+        if selectedVideoCodes.isSuperset(of: codes) {
+            selectedVideoCodes.subtract(codes)
+        } else {
+            selectedVideoCodes.formUnion(codes)
         }
     }
 
@@ -84,10 +169,21 @@ struct WatchHistoryScreen: View {
         try? modelContext.save()
     }
 
+    private func deleteSelected() {
+        for item in visibleWatchHistory where selectedVideoCodes.contains(item.videoCode) {
+            modelContext.delete(item)
+        }
+        selectedVideoCodes.removeAll()
+        isSelectionModeActive = false
+        try? modelContext.save()
+    }
+
     private func clearAll() {
         for item in watchHistory {
             modelContext.delete(item)
         }
+        selectedVideoCodes.removeAll()
+        isSelectionModeActive = false
         try? modelContext.save()
     }
 }

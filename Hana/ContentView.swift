@@ -10,71 +10,121 @@ import SwiftData
 
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 struct ContentView: View {
     @Environment(HanaServices.self) private var services
     @Environment(\.modelContext) private var modelContext
     @AppStorage(HanaSettingsKey.appearanceMode) private var appearanceMode = HanaAppearanceMode.system.rawValue
+#if !os(macOS)
     @AppStorage(HanaSettingsKey.themeColor) private var themeColor = HanaThemeColor.defaultValue
+#endif
     @Query(sort: \DownloadQueueRecord.createdAt, order: .reverse) private var downloadQueue: [DownloadQueueRecord]
     @State private var selectedTab: AppTab = .discover
+#if os(macOS)
+    @State private var macOSNavigationPath: [HanaRoute] = []
+#endif
 
     private var appThemeColor: Color {
+#if os(macOS)
+        .pink
+#else
         (HanaThemeColor(rawValue: themeColor) ?? .pink).color
+#endif
     }
+
+#if os(macOS)
+    private var macOSSidebarProfileTitle: String {
+        services.siteSession.isLoggedIn ? services.siteSession.displayName : "未登录"
+    }
+#endif
 
     var body: some View {
         @Bindable var siteSession = services.siteSession
 
-        rootContent
-        .sheet(item: $siteSession.activeFlow) { flow in
-            SiteWebSessionSheet(
-                flow: flow,
-                onComplete: { cookies in
-                    completeSiteWebFlow(with: cookies)
-                },
-                onCancel: {
-                    services.siteSession.cancel()
-                }
-            )
-        }
-        .task {
-            await refreshLoginStateFromStoredCookies()
-            await synchronizeDownloadsAtLaunch()
-        }
-        .tint(appThemeColor)
-        .accentColor(appThemeColor)
-        .preferredColorScheme(HanaAppearanceMode(rawValue: appearanceMode)?.colorScheme)
+        let appContent = rootContent
+            .sheet(item: $siteSession.activeFlow) { flow in
+                SiteWebSessionSheet(
+                    flow: flow,
+                    onComplete: { cookies in
+                        completeSiteWebFlow(with: cookies)
+                    },
+                    onCancel: {
+                        services.siteSession.cancel()
+                    }
+                )
+            }
+            .task {
+                await refreshLoginStateFromStoredCookies()
+                await synchronizeDownloadsAtLaunch()
+            }
+            .tint(appThemeColor)
+            .accentColor(appThemeColor)
+
+#if os(macOS)
+        appContent
+            .onAppear {
+                applyMacOSAppearance()
+            }
+            .onChange(of: appearanceMode) { _, _ in
+                applyMacOSAppearance()
+            }
+#else
+        appContent
+            .preferredColorScheme(HanaAppearanceMode(rawValue: appearanceMode)?.colorScheme)
+#endif
     }
+
+#if os(macOS)
+    private func applyMacOSAppearance() {
+        let mode = HanaAppearanceMode(rawValue: appearanceMode) ?? .system
+        mode.applyToApplication()
+    }
+#endif
 
     @ViewBuilder
     private var rootContent: some View {
 #if os(macOS)
         NavigationSplitView {
-            List(selection: $selectedTab) {
-                NavigationLink(value: AppTab.discover) {
-                    Label("发现", systemImage: "sparkles")
+            VStack(spacing: 0) {
+                List(selection: $selectedTab) {
+                    NavigationLink(value: AppTab.discover) {
+                        Label("发现", systemImage: "sparkles")
+                    }
+                    NavigationLink(value: AppTab.subscriptions) {
+                        Label("订阅", systemImage: "play.rectangle.on.rectangle")
+                    }
+                    NavigationLink(value: AppTab.favorites) {
+                        Label("收藏", systemImage: "heart")
+                    }
+                    NavigationLink(value: AppTab.search) {
+                        Label("搜索", systemImage: "magnifyingglass")
+                    }
                 }
-                NavigationLink(value: AppTab.subscriptions) {
-                    Label("订阅", systemImage: "play.rectangle.on.rectangle")
-                }
-                NavigationLink(value: AppTab.favorites) {
-                    Label("收藏", systemImage: "heart")
-                }
-                NavigationLink(value: AppTab.profile) {
-                    Label("我的", systemImage: "person.crop.circle")
-                }
-                NavigationLink(value: AppTab.search) {
-                    Label("搜索", systemImage: "magnifyingglass")
+                .listStyle(.sidebar)
+
+                MacOSSidebarProfileButton(
+                    title: macOSSidebarProfileTitle,
+                    imageData: services.profileAvatarStore.imageData,
+                    isSelected: selectedTab == .profile
+                ) {
+                    selectedTab = .profile
+                    macOSNavigationPath.removeAll()
                 }
             }
             .navigationTitle("Hana")
+            .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 280)
         } detail: {
-            NavigationStack {
+            NavigationStack(path: $macOSNavigationPath) {
                 tabContent(for: selectedTab)
                     .navigationDestination(for: HanaRoute.self, destination: destination)
             }
+        }
+        .hanaMacOSHomeToolbarChrome(isHidden: selectedTab == .discover && macOSNavigationPath.isEmpty)
+        .onChange(of: selectedTab) {
+            macOSNavigationPath.removeAll()
         }
 #else
         TabView(selection: $selectedTab) {
@@ -139,7 +189,11 @@ struct ContentView: View {
     private func destination(_ route: HanaRoute) -> some View {
         switch route {
         case .video(let code):
+#if os(macOS)
+            VideoDetailScreen(videoCode: code, isNavigationTop: macOSNavigationPath.last == .video(code))
+#else
             VideoDetailScreen(videoCode: code)
+#endif
         case .search(let criteria):
             SearchScreen(initialCriteria: criteria)
         case .lockedSearch(let criteria):
@@ -206,6 +260,79 @@ struct ContentView: View {
     }
 }
 
+#if os(macOS)
+private struct MacOSSidebarProfileButton: View {
+    let title: String
+    let imageData: Data?
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                MacOSSidebarProfileAvatar(imageData: imageData)
+
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 56, alignment: .center)
+            .contentShape(.rect)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.primary.opacity(0.08))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+        .accessibilityLabel(title)
+        .accessibilityHint("打开我的")
+    }
+}
+
+private struct MacOSSidebarProfileAvatar: View {
+    let imageData: Data?
+    private let side: CGFloat = 36
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(.secondary.opacity(0.16))
+
+            avatarContent
+        }
+        .frame(width: side, height: side)
+        .clipShape(Circle())
+        .overlay {
+            Circle()
+                .stroke(.secondary.opacity(0.22), lineWidth: 1)
+        }
+    }
+
+    @ViewBuilder
+    private var avatarContent: some View {
+        if let imageData,
+           let image = NSImage(data: imageData) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+        } else {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.system(size: side - 4))
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+#endif
+
 private struct ProfileTabLabel: View {
     @Environment(HanaServices.self) private var services
 
@@ -252,6 +379,16 @@ private enum AppTab: Hashable {
 }
 
 private extension View {
+    @ViewBuilder
+    func hanaMacOSHomeToolbarChrome(isHidden: Bool) -> some View {
+#if os(macOS)
+        toolbarBackgroundVisibility(isHidden ? .hidden : .automatic, for: .windowToolbar)
+            .toolbar(removing: isHidden ? .title : nil)
+#else
+        self
+#endif
+    }
+
     @ViewBuilder
     func hanaTabSearchActivation() -> some View {
 #if os(iOS) || os(macOS)

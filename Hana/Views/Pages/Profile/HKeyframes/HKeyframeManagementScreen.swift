@@ -19,34 +19,60 @@ struct HKeyframeManagementScreen: View {
     }
 
     var body: some View {
+        content
+            .navigationTitle("HKeyframes")
+            .searchable(text: $query, prompt: "标题或番号")
+            .hanaToast($toastMessage)
+            .hanaFeedbackAlert($alertMessage)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if records.isEmpty {
+            ContentUnavailableView {
+                Label("暂无本地 HKeyframes", systemImage: "bookmark")
+            } description: {
+                Text("从剪贴板导入后会显示在这里。")
+            } actions: {
+                importButton
+                    .buttonStyle(.borderedProminent)
+            }
+        } else if visibleRecords.isEmpty {
+            ContentUnavailableView("没有符合条件的 HKeyframes", systemImage: "line.3.horizontal.decrease.circle")
+        } else {
+            hKeyframeList
+        }
+    }
+
+    private var hKeyframeList: some View {
         List {
             Section {
-                Button {
-                    importFromPasteboard()
-                } label: {
-                    Label("从剪贴板导入", systemImage: "doc.on.clipboard")
-                }
+                importButton
             }
 
             Section("本地 HKeyframes") {
-                if visibleRecords.isEmpty {
-                    ContentUnavailableView("暂无本地 HKeyframes", systemImage: "bookmark")
-                } else {
-                    ForEach(visibleRecords) { record in
-                        NavigationLink {
-                            HKeyframeRecordDetailScreen(record: record)
-                        } label: {
-                            HKeyframeRecordRow(record: record)
-                        }
-                    }
-                    .onDelete(perform: delete)
-                }
+                recordRows
             }
         }
-        .navigationTitle("HKeyframes")
-        .searchable(text: $query, prompt: "标题或番号")
-        .hanaToast($toastMessage)
-        .hanaFeedbackAlert($alertMessage)
+    }
+
+    private var importButton: some View {
+        Button {
+            importFromPasteboard()
+        } label: {
+            Label("从剪贴板导入", systemImage: "doc.on.clipboard")
+        }
+    }
+
+    private var recordRows: some View {
+        ForEach(visibleRecords) { record in
+            NavigationLink {
+                HKeyframeRecordDetailScreen(record: record)
+            } label: {
+                HKeyframeRecordRow(record: record)
+            }
+        }
+        .onDelete(perform: delete)
     }
 
     private func importFromPasteboard() {

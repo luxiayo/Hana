@@ -2,13 +2,81 @@ import AVKit
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
+#if canImport(AppKit)
+import AppKit
+#endif
 
 struct SettingsScreen: View {
+    @AppStorage(HanaSettingsKey.appearanceMode) private var appearanceMode = HanaAppearanceMode.system.rawValue
+#if !os(macOS)
+    @AppStorage(HanaSettingsKey.themeColor) private var themeColor = HanaThemeColor.defaultValue
+#endif
+
     var body: some View {
+        themedContent
+    }
+
+    @ViewBuilder
+    private var themedContent: some View {
+#if os(macOS)
+        macThemedContent
+#else
+        mobileThemedContent
+#endif
+    }
+
+#if os(macOS)
+    @ViewBuilder
+    private var macThemedContent: some View {
+        let baseContent = content
+            .tint(appThemeColor)
+            .accentColor(appThemeColor)
+
+        baseContent
+            .onAppear {
+                applyMacOSAppearance(appAppearanceMode)
+            }
+            .onChange(of: appAppearanceMode) { _, mode in
+                applyMacOSAppearance(mode)
+            }
+    }
+
+    private func applyMacOSAppearance(_ mode: HanaAppearanceMode) {
+        mode.applyToApplication()
+    }
+#else
+    @ViewBuilder
+    private var mobileThemedContent: some View {
+        let baseContent = content
+            .tint(appThemeColor)
+            .accentColor(appThemeColor)
+
+        if let colorScheme = appAppearanceMode.colorScheme {
+            baseContent.preferredColorScheme(colorScheme)
+        } else {
+            baseContent
+        }
+    }
+#endif
+
+    @ViewBuilder
+    private var content: some View {
 #if os(macOS)
         MacSettingsScreen()
 #else
         MobileSettingsScreen()
+#endif
+    }
+
+    private var appAppearanceMode: HanaAppearanceMode {
+        HanaAppearanceMode(rawValue: appearanceMode) ?? .system
+    }
+
+    private var appThemeColor: Color {
+#if os(macOS)
+        .pink
+#else
+        (HanaThemeColor(rawValue: themeColor) ?? .pink).color
 #endif
     }
 }
@@ -89,37 +157,440 @@ private struct MobileSettingsScreen: View {
     }
 }
 
+#if os(macOS)
 private struct MacSettingsScreen: View {
+    @State private var selection = MacSettingsCategory.general
+
     var body: some View {
-        TabView {
-            Tab("播放", systemImage: "play.rectangle") {
-                PlaybackSettingsScreen()
-            }
+        NavigationSplitView {
+            List(selection: $selection) {
+                Section {
+                    settingsSidebarItem(.general)
+                    settingsSidebarItem(.playback)
+                }
 
-            Tab("HKeyframes", systemImage: "bookmark") {
-                HKeyframeSettingsScreen()
-            }
+                Section {
+                    settingsSidebarItem(.hKeyframes)
+                    settingsSidebarItem(.downloads)
+                    settingsSidebarItem(.network)
+                    settingsSidebarItem(.localData)
+                }
 
-            Tab("下载", systemImage: "arrow.down.circle") {
-                DownloadSettingsScreen()
+                Section {
+                    settingsSidebarItem(.about)
+                }
             }
-
-            Tab("外观", systemImage: "circle.lefthalf.filled") {
-                AppearanceSettingsScreen()
+            .frame(minWidth: 180)
+            .tint(appThemeColor)
+            .accentColor(appThemeColor)
+        } detail: {
+            NavigationStack {
+                settingsDetail(for: selection)
+                    .formStyle(.grouped)
             }
-
-            Tab("网络", systemImage: "network") {
-                NetworkSettingsScreen()
-            }
-
-            Tab("本地数据", systemImage: "internaldrive") {
-                LocalDataSettingsScreen()
-            }
+            .tint(appThemeColor)
+            .accentColor(appThemeColor)
         }
-        .scenePadding()
-        .frame(minWidth: 560, idealWidth: 640, minHeight: 460, idealHeight: 560)
+        .navigationSplitViewStyle(.balanced)
+        .frame(minWidth: 680, minHeight: 600)
+        .tint(appThemeColor)
+        .accentColor(appThemeColor)
+    }
+
+    private var appThemeColor: Color {
+        .pink
+    }
+
+    private func settingsSidebarItem(_ category: MacSettingsCategory) -> some View {
+        Label(category.title, systemImage: category.systemImage)
+            .tag(category)
+            .labelStyle(MacSettingsSidebarLabelStyle(tint: category.tint, iconSize: category.iconSize))
+    }
+
+    @ViewBuilder
+    private func settingsDetail(for category: MacSettingsCategory) -> some View {
+        switch category {
+        case .general:
+            MacGeneralSettingsScreen()
+        case .playback:
+            PlaybackSettingsScreen()
+        case .hKeyframes:
+            HKeyframeSettingsScreen()
+        case .downloads:
+            DownloadSettingsScreen()
+        case .network:
+            NetworkSettingsScreen()
+        case .localData:
+            LocalDataSettingsScreen()
+        case .about:
+            MacAboutSettingsScreen()
+        }
     }
 }
+
+private enum MacSettingsCategory: String, CaseIterable, Identifiable {
+    case general
+    case playback
+    case hKeyframes
+    case downloads
+    case network
+    case localData
+    case about
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general:
+            "常规"
+        case .playback:
+            "播放"
+        case .hKeyframes:
+            "HKeyframes"
+        case .downloads:
+            "下载"
+        case .network:
+            "网络与站点"
+        case .localData:
+            "本地数据"
+        case .about:
+            "关于"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general:
+            "gearshape"
+        case .playback:
+            "play.rectangle"
+        case .hKeyframes:
+            "bookmark"
+        case .downloads:
+            "arrow.down.circle"
+        case .network:
+            "network"
+        case .localData:
+            "internaldrive"
+        case .about:
+            "info.circle"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .general:
+            .red
+        case .playback:
+            .blue
+        case .hKeyframes:
+            .purple
+        case .downloads:
+            .green
+        case .network:
+            .orange
+        case .localData:
+            .gray
+        case .about:
+            .secondary
+        }
+    }
+
+    var iconSize: CGFloat {
+        switch self {
+        case .playback:
+            12
+        case .about:
+            13
+        case .general, .hKeyframes, .downloads, .network, .localData:
+            14
+        }
+    }
+}
+
+private struct MacSettingsSidebarLabelStyle: LabelStyle {
+    let tint: Color
+    let iconSize: CGFloat
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 10) {
+            configuration.icon
+                .font(.system(size: iconSize, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(tint, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            configuration.title
+        }
+    }
+}
+
+private struct MacGeneralSettingsScreen: View {
+    @AppStorage(HanaSettingsKey.appearanceMode) private var appearanceMode = HanaAppearanceMode.system.rawValue
+    @AppStorage(HanaSettingsKey.themeColor) private var themeColor = HanaThemeColor.defaultValue
+
+    var body: some View {
+        Form {
+            Section("外观") {
+                MacSettingsOptionPicker(
+                    title: "主题",
+                    options: HanaAppearanceMode.allCases,
+                    selection: appearanceModeBinding,
+                    animateSelection: false
+                ) { mode, isSelected in
+                    MacAppearanceModePreview(mode: mode, isSelected: isSelected)
+                } label: { mode, _ in
+                    mode.title
+                }
+
+                MacSettingsOptionPicker(
+                    title: "色彩",
+                    options: HanaThemeColor.allCases.map(\.rawValue),
+                    selection: $themeColor
+                ) { rawValue, isSelected in
+                    MacThemeColorPreview(theme: themeColorOption(for: rawValue), isSelected: isSelected)
+                } label: { rawValue, isSelected in
+                    isSelected ? themeColorOption(for: rawValue).title : nil
+                }
+                .disabled(true)
+                .grayscale(1)
+                .opacity(0.45)
+                .accessibilityHint("macOS 版本固定使用粉色")
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("常规")
+        .onAppear {
+            resetMacOSThemeColorIfNeeded()
+        }
+        .onChange(of: themeColor) {
+            resetMacOSThemeColorIfNeeded()
+        }
+    }
+
+    private var appearanceModeBinding: Binding<HanaAppearanceMode> {
+        Binding {
+            HanaAppearanceMode(rawValue: appearanceMode) ?? .system
+        } set: { mode in
+            appearanceMode = mode.rawValue
+            mode.applyToApplication()
+        }
+    }
+
+    private func themeColorOption(for rawValue: String) -> HanaThemeColor {
+        HanaThemeColor(rawValue: rawValue) ?? .pink
+    }
+
+    private func resetMacOSThemeColorIfNeeded() {
+        guard themeColor != HanaThemeColor.defaultValue else { return }
+        themeColor = HanaThemeColor.defaultValue
+    }
+}
+
+private struct MacSettingsOptionPicker<Option: Hashable, Content: View>: View {
+    let title: String
+    let options: [Option]
+    @Binding var selection: Option
+    let animateSelection: Bool
+    let content: (Option, Bool) -> Content
+    let label: (Option, Bool) -> String?
+
+    init(
+        title: String,
+        options: [Option],
+        selection: Binding<Option>,
+        animateSelection: Bool = true,
+        @ViewBuilder content: @escaping (Option, Bool) -> Content,
+        label: @escaping (Option, Bool) -> String?
+    ) {
+        self.title = title
+        self.options = options
+        _selection = selection
+        self.animateSelection = animateSelection
+        self.content = content
+        self.label = label
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(title)
+                .font(.body)
+                .foregroundStyle(.primary)
+
+            Spacer(minLength: 20)
+
+            HStack(alignment: .top, spacing: 8) {
+                ForEach(options, id: \.self) { option in
+                    let isSelected = selection == option
+                    let labelText = label(option, isSelected)
+
+                    Button {
+                        updateSelection(option)
+                    } label: {
+                        VStack(spacing: 4) {
+                            content(option, isSelected)
+
+                            Text(labelText ?? "")
+                                .font(.caption)
+                                .foregroundStyle(.primary)
+                                .frame(minHeight: 16)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(labelText ?? "")
+                    .accessibilityValue(isSelected ? "已选择" : "未选择")
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func updateSelection(_ option: Option) {
+        if animateSelection {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selection = option
+            }
+        } else {
+            selection = option
+        }
+    }
+}
+
+private struct MacAppearanceModePreview: View {
+    let mode: HanaAppearanceMode
+    let isSelected: Bool
+
+    var body: some View {
+        ZStack {
+            previewBackground
+                .frame(width: 100, height: 64)
+
+            HStack(spacing: 5) {
+                previewPane(width: 30, color: sidebarColor)
+                previewPane(width: 48, color: contentColor)
+            }
+
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(isSelected ? selectionTint : Color.clear, lineWidth: 3)
+        }
+        .frame(width: 100, height: 64)
+    }
+
+    @ViewBuilder
+    private var previewBackground: some View {
+        switch mode {
+        case .system:
+            MacDiagonalAppearancePreviewShape()
+                .fill(Color.white)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.black.opacity(0.8))
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        case .light:
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.white)
+        case .dark:
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.black.opacity(0.8))
+        }
+    }
+
+    @ViewBuilder
+    private func previewPane(width: CGFloat, color: Color) -> some View {
+        switch mode {
+        case .system:
+            MacDiagonalAppearancePreviewShape()
+                .fill(Color.gray.opacity(0.18))
+                .background {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.white.opacity(0.14))
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .frame(width: width, height: 46)
+        case .light, .dark:
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(color)
+                .frame(width: width, height: 46)
+        }
+    }
+
+    private var sidebarColor: Color {
+        switch mode {
+        case .system:
+            Color.clear
+        case .light:
+            Color.gray.opacity(0.18)
+        case .dark:
+            Color.white.opacity(0.14)
+        }
+    }
+
+    private var contentColor: Color {
+        switch mode {
+        case .system:
+            Color.primary.opacity(0.12)
+        case .light:
+            Color.gray.opacity(0.08)
+        case .dark:
+            Color.white.opacity(0.08)
+        }
+    }
+
+    private var selectionTint: Color {
+        .pink
+    }
+}
+
+private struct MacDiagonalAppearancePreviewShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct MacThemeColorPreview: View {
+    let theme: HanaThemeColor
+    let isSelected: Bool
+
+    var body: some View {
+        Circle()
+            .fill(theme.color)
+            .frame(width: 24, height: 24)
+            .overlay {
+                Circle()
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+            }
+            .overlay {
+                Circle()
+                    .strokeBorder(isSelected ? selectionTint : Color.clear, lineWidth: 3)
+                    .padding(-3)
+            }
+            .frame(width: 34, height: 34)
+    }
+
+    private var selectionTint: Color {
+        .pink
+    }
+}
+
+private struct MacAboutSettingsScreen: View {
+    var body: some View {
+        Form {
+            Section {
+                SettingsAppFooter()
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("关于")
+    }
+}
+#endif
 
 private struct SettingsNavigationRow: View {
     let title: String
@@ -421,7 +892,7 @@ private struct NetworkSettingsScreen: View {
     @State private var isCredentialLoginPresented = false
 
     var body: some View {
-        List {
+        Form {
             Section("站点") {
                 LabeledContent {
                     Text(services.httpClient.baseURL.absoluteString)
@@ -699,7 +1170,7 @@ private struct LocalDataSettingsScreen: View {
     @State private var toastMessage: HanaToastMessage?
 
     var body: some View {
-        List {
+        Form {
             Section("记录数量") {
                 LabeledContent {
                     Text("\(watchHistory.count)")

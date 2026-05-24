@@ -17,17 +17,26 @@ struct ProfileScreen: View {
     @State private var accountSummaryState: ProfileAccountSummaryState = .idle
 
     var body: some View {
+        content
+            .navigationTitle("我的")
+            .task(id: accountSummaryTaskID) {
+                await loadAccountSummary()
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+#if os(macOS)
+        macOSContent
+#else
+        mobileContent
+#endif
+    }
+
+    private var mobileContent: some View {
         List {
             Section {
-                NavigationLink(value: HanaRoute.profileDetail) {
-                    ProfileAccountHeader(
-                        displayName: services.siteSession.isLoggedIn ? services.siteSession.displayName : "未登录",
-                        accountStatusIcon: accountStatusIcon,
-                        accountStatusText: accountStatusText,
-                        siteText: services.siteSession.baseURL.absoluteString,
-                        avatarURL: avatarURL
-                    )
-                }
+                profileHeaderLink
             }
 
             Section {
@@ -72,17 +81,80 @@ struct ProfileScreen: View {
                 }
             }
 
-#if !os(macOS)
             Section {
                 NavigationLink(value: HanaRoute.settings) {
                     Label("设置", systemImage: "gearshape")
                 }
             }
-#endif
         }
-        .navigationTitle("我的")
-        .task(id: accountSummaryTaskID) {
-            await loadAccountSummary()
+    }
+
+#if os(macOS)
+    private var macOSContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                profileHeaderLink
+                    .buttonStyle(.plain)
+
+                Divider()
+
+                Form {
+                    MacOSProfileNavigationLink(
+                        route: .watchHistory,
+                        title: "观看记录",
+                        value: "\(visibleWatchHistoryCount)",
+                        systemImage: "clock.arrow.circlepath"
+                    )
+
+                    MacOSProfileNavigationLink(
+                        route: .watchLater,
+                        title: "稍后观看",
+                        value: watchLaterValue,
+                        systemImage: "text.badge.plus"
+                    )
+
+                    MacOSProfileNavigationLink(
+                        route: .playlists,
+                        title: "播放清单",
+                        value: playlistValue,
+                        systemImage: "list.bullet.rectangle"
+                    )
+
+                    MacOSProfileNavigationLink(
+                        route: .hKeyframes,
+                        title: "HKeyframes",
+                        value: "\(hKeyframeRecords.count)",
+                        systemImage: "bookmark"
+                    )
+
+                    MacOSProfileNavigationLink(
+                        route: .downloads,
+                        title: "已下载的视频",
+                        value: "\(downloadQueue.count)",
+                        systemImage: "arrow.down.circle"
+                    )
+                }
+                .formStyle(.grouped)
+            }
+            .frame(maxWidth: 760, alignment: .leading)
+            .padding(.vertical, 32)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .scrollContentBackground(.visible)
+    }
+#endif
+
+    private var profileHeaderLink: some View {
+        NavigationLink(value: HanaRoute.profileDetail) {
+            ProfileAccountHeader(
+                displayName: services.siteSession.isLoggedIn ? services.siteSession.displayName : "未登录",
+                accountStatusIcon: accountStatusIcon,
+                accountStatusText: accountStatusText,
+                siteText: services.siteSession.baseURL.absoluteString,
+                avatarURL: avatarURL
+            )
         }
     }
 
@@ -207,6 +279,26 @@ private struct ProfileLoadedAccountSummary {
     let watchLaterCount: Int
     let playlistCount: Int
 }
+
+#if os(macOS)
+private struct MacOSProfileNavigationLink: View {
+    let route: HanaRoute
+    let title: String
+    let value: String
+    let systemImage: String
+
+    var body: some View {
+        NavigationLink(value: route) {
+            LabeledContent {
+                Text(value)
+                    .foregroundStyle(.secondary)
+            } label: {
+                Label(title, systemImage: systemImage)
+            }
+        }
+    }
+}
+#endif
 
 private struct ProfileNavigationRow: View {
     let title: String

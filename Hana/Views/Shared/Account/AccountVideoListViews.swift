@@ -152,7 +152,7 @@ struct AccountVideoListScreen: View {
             } else if videos.isEmpty {
                 ContentUnavailableView("没有符合条件的内容", systemImage: "line.3.horizontal.decrease.circle")
             } else {
-                List(selection: $selectedVideoCodes) {
+                List {
                     if let description = page.description {
                         Section {
                             Text(description)
@@ -164,11 +164,17 @@ struct AccountVideoListScreen: View {
                     Section {
                         if isEditing {
                             ForEach(videos) { video in
-                                accountVideoSelectionRow(video)
-                                    .tag(video.videoCode)
-                                    .onAppear {
-                                        preloadNextPageIfNeeded(after: video, in: videos, maxPage: page.maxPage)
-                                    }
+                                HanaSelectableRow(
+                                    isSelected: selectedVideoCodes.contains(video.videoCode),
+                                    accessibilityLabel: video.title
+                                ) {
+                                    toggleSelection(video.videoCode)
+                                } content: {
+                                    accountVideoSelectionRow(video)
+                                }
+                                .onAppear {
+                                    preloadNextPageIfNeeded(after: video, in: videos, maxPage: page.maxPage)
+                                }
                             }
                         } else {
                             let portraitVideos = videos.filter { $0.style == .compact }
@@ -275,6 +281,14 @@ struct AccountVideoListScreen: View {
             selectedVideoCodes.removeAll()
         } else {
             isSelectionModeActive = true
+        }
+    }
+
+    private func toggleSelection(_ videoCode: String) {
+        if selectedVideoCodes.contains(videoCode) {
+            selectedVideoCodes.remove(videoCode)
+        } else {
+            selectedVideoCodes.insert(videoCode)
         }
     }
 

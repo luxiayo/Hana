@@ -9,6 +9,13 @@ struct SiteWebSessionSheet: View {
     @State private var cookies: [HTTPCookie] = []
 
     var body: some View {
+        content
+#if os(macOS)
+            .frame(minWidth: 760, idealWidth: 900, minHeight: 560, idealHeight: 640)
+#endif
+    }
+
+    private var content: some View {
         NavigationStack {
             SiteWebView(
                 flow: flow,

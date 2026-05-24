@@ -5,66 +5,115 @@ struct ProfileDetailScreen: View {
     @State private var isCredentialLoginPresented = false
 
     var body: some View {
+        content
+            .navigationTitle("个人资料")
+            .sheet(isPresented: $isCredentialLoginPresented) {
+                SiteCredentialLoginSheet()
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+#if os(macOS)
+        macOSContent
+#else
+        mobileContent
+#endif
+    }
+
+    private var mobileContent: some View {
         List {
             Section {
-                HStack(spacing: 14) {
-                    ProfileAvatarView(url: avatarURL)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(displayName)
-                            .font(.title3.weight(.semibold))
-                            .lineLimit(1)
-
-                        Text(accountStatusText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-                .padding(.vertical, 6)
+                profileHeader
             }
 
-            Section("站点") {
-                ProfileMetadataLine(
-                    systemImage: "link",
-                    text: services.siteSession.baseURL.absoluteString
-                )
-                if let userID = services.siteSession.userID, services.siteSession.isLoggedIn {
-                    ProfileMetadataLine(
-                        systemImage: "person.text.rectangle",
-                        text: userID
-                    )
+            siteSection
+
+            accountSection
+        }
+    }
+
+#if os(macOS)
+    private var macOSContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                profileHeader
+
+                Divider()
+
+                Form {
+                    siteSection
+
+                    accountSection
                 }
-                if let date = services.siteSession.lastCookieSyncAt {
-                    LabeledContent("Cookie 同步", value: date.hanaChineseDateTimeText)
-                }
+                .formStyle(.grouped)
             }
+            .frame(maxWidth: 760, alignment: .leading)
+            .padding(.horizontal, 40)
+            .padding(.vertical, 32)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .scrollContentBackground(.visible)
+    }
+#endif
 
-            Section("账号") {
-                if services.siteSession.isLoggedIn {
-                    Button(role: .destructive) {
-                        services.logout()
-                    } label: {
-                        Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
-                    }
-                } else {
-                    Button {
-                        services.siteSession.requestLogin()
-                    } label: {
-                        Label("登录站点", systemImage: "person.crop.circle")
-                    }
+    private var profileHeader: some View {
+        HStack(spacing: 14) {
+            ProfileAvatarView(url: avatarURL)
 
-                    Button {
-                        isCredentialLoginPresented = true
-                    } label: {
-                        Label("账号密码登录", systemImage: "key")
-                    }
-                }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(displayName)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1)
+
+                Text(accountStatusText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
         }
-        .navigationTitle("个人资料")
-        .sheet(isPresented: $isCredentialLoginPresented) {
-            SiteCredentialLoginSheet()
+        .padding(.vertical, 6)
+    }
+
+    private var siteSection: some View {
+        Section("站点") {
+            ProfileMetadataLine(
+                systemImage: "link",
+                text: services.siteSession.baseURL.absoluteString
+            )
+            if let userID = services.siteSession.userID, services.siteSession.isLoggedIn {
+                ProfileMetadataLine(
+                    systemImage: "person.text.rectangle",
+                    text: userID
+                )
+            }
+            if let date = services.siteSession.lastCookieSyncAt {
+                LabeledContent("Cookie 同步", value: date.hanaChineseDateTimeText)
+            }
+        }
+    }
+
+    private var accountSection: some View {
+        Section("账号") {
+            if services.siteSession.isLoggedIn {
+                Button(role: .destructive) {
+                    services.logout()
+                } label: {
+                    Label("退出登录", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+            } else {
+                Button {
+                    services.siteSession.requestLogin()
+                } label: {
+                    Label("登录站点", systemImage: "person.crop.circle")
+                }
+
+                Button {
+                    isCredentialLoginPresented = true
+                } label: {
+                    Label("账号密码登录", systemImage: "key")
+                }
+            }
         }
     }
 

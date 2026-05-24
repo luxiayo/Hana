@@ -14,6 +14,7 @@ struct VideoPlayerPanel: View {
     @Binding var selectedLinkID: String
     @Binding var activePlayer: AVPlayer?
     @Binding var isFullscreenPresented: Bool
+    let isActive: Bool
     @State private var player: AVPlayer?
     @State private var progressTask: Task<Void, Never>?
     @State private var orientationTask: Task<Void, Never>?
@@ -33,7 +34,7 @@ struct VideoPlayerPanel: View {
     }
 
     private var shouldSuppressHKeyframeCountdown: Bool {
-        !isPlaybackActive
+        false
     }
 
     var body: some View {
@@ -92,18 +93,19 @@ struct VideoPlayerPanel: View {
             }
         }
         .onAppear {
-            if selectedLinkID.isEmpty {
-                selectedLinkID = video.resolutions.first?.id ?? ""
-            }
-            teardownTask?.cancel()
-            configurePlayerIfNeeded()
+            updatePlaybackActivation(isActive)
+        }
+        .onChange(of: isActive) {
+            updatePlaybackActivation(isActive)
         }
         .onChange(of: selectedLinkID) {
+            guard isActive else { return }
             guard !selectedLinkID.isEmpty, configuredLinkID != selectedLinkID else { return }
             savePlaybackProgress()
             configurePlayer(force: true)
         }
         .onChange(of: loopPlaybackEnabled) {
+            guard isActive else { return }
             configurePlaybackLoop(player: player, item: player?.currentItem)
         }
         .onDisappear {
@@ -113,6 +115,18 @@ struct VideoPlayerPanel: View {
 
     private func configurePlayerIfNeeded() {
         configurePlayer(force: false)
+    }
+
+    private func updatePlaybackActivation(_ isActive: Bool) {
+        if isActive {
+            if selectedLinkID.isEmpty {
+                selectedLinkID = video.resolutions.first?.id ?? ""
+            }
+            teardownTask?.cancel()
+            configurePlayerIfNeeded()
+        } else {
+            scheduleTeardown()
+        }
     }
 
     private func configurePlayer(force: Bool = false) {
