@@ -43,6 +43,7 @@ struct ContentView: View {
 
     var body: some View {
         @Bindable var siteSession = services.siteSession
+        @Bindable var updateChecker = services.updateChecker
 
         let appContent = rootContent
             .sheet(item: $siteSession.activeFlow) { flow in
@@ -59,7 +60,9 @@ struct ContentView: View {
             .task {
                 await refreshLoginStateFromStoredCookies()
                 await synchronizeDownloadsAtLaunch()
+                await services.updateChecker.checkAutomaticallyIfNeeded()
             }
+            .hanaUpdateAlert(update: $updateChecker.availableUpdate)
             .tint(appThemeColor)
             .accentColor(appThemeColor)
 

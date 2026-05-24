@@ -115,13 +115,12 @@ private struct MobileSettingsScreen: View {
                 } label: {
                     SettingsNavigationRow(category: .localData)
                 }
+                NavigationLink {
+                    AboutSettingsScreen()
+                } label: {
+                    SettingsNavigationRow(category: .about)
+                }
             }
-
-            Section {
-                SettingsAppFooter()
-            }
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
         }
         .navigationTitle("设置")
     }
@@ -193,7 +192,7 @@ private struct MacSettingsScreen: View {
         case .localData:
             LocalDataSettingsScreen()
         case .about:
-            MacAboutSettingsScreen()
+            AboutSettingsScreen()
         }
     }
 }
@@ -533,18 +532,105 @@ private struct MacThemeColorPreview: View {
     }
 }
 
-private struct MacAboutSettingsScreen: View {
+#endif
+
+private struct AboutSettingsScreen: View {
+    @Environment(HanaServices.self) private var services
+    @Environment(\.openURL) private var openURL
+    @AppStorage(HanaSettingsKey.autoCheckForUpdates) private var autoCheckForUpdates = true
+    @AppStorage(HanaSettingsKey.updateLinkDestination) private var updateLinkDestination = HanaUpdateLinkDestination.defaultValue
+    @State private var toastMessage: HanaToastMessage?
+    @State private var alertMessage: HanaAlertMessage?
+    @State private var availableUpdate: HanaAvailableUpdate?
+
     var body: some View {
         Form {
             Section {
                 SettingsAppFooter()
             }
+
+            Section {
+                Toggle(isOn: $autoCheckForUpdates) {
+                    Label("自动检查", systemImage: "arrow.triangle.2.circlepath")
+                }
+
+#if os(iOS)
+                Picker(selection: $updateLinkDestination) {
+                    ForEach(HanaUpdateLinkDestination.allCases) { destination in
+                        Text(destination.title).tag(destination.rawValue)
+                    }
+                } label: {
+                    Label("打开方式", systemImage: "arrow.up.forward.app")
+                }
+#endif
+
+                Button {
+                    Task { await checkForUpdates() }
+                } label: {
+                    if services.updateChecker.isChecking {
+                        Label("检查中", systemImage: "hourglass")
+                    } else {
+                        Label("检查更新", systemImage: "arrow.clockwise")
+                    }
+                }
+                .disabled(services.updateChecker.isChecking)
+            } header: {
+                Text("更新")
+            } footer: {
+                Text(updateFooterText)
+            }
+
+            Section("项目") {
+                Button {
+                    openURL(HanaUpdateChecker.websiteURL)
+                } label: {
+                    Label("项目网站", systemImage: "safari")
+                }
+
+                Button {
+                    openURL(HanaUpdateChecker.repositoryURL)
+                } label: {
+                    Label("GitHub 仓库", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+
+                Button {
+                    openURL(HanaUpdateChecker.releasesURL)
+                } label: {
+                    Label("Releases 页面", systemImage: "tag")
+                }
+            }
         }
         .formStyle(.grouped)
         .navigationTitle("关于")
+        .hanaToast($toastMessage)
+        .hanaFeedbackAlert($alertMessage)
+        .hanaUpdateAlert(update: $availableUpdate)
+    }
+
+    private var updateFooterText: String {
+#if os(iOS)
+        "开启后，应用会每天检查更新。选择侧载工具时，发现新版可跳转对应 App。"
+#else
+        "开启后，应用会每天检查更新。"
+#endif
+    }
+
+    private func checkForUpdates() async {
+        do {
+            let result = try await services.updateChecker.checkManually()
+            switch result {
+            case .updateAvailable(let update):
+                availableUpdate = update
+            case .upToDate:
+                toastMessage = .success("已是最新版本")
+            case .noRelease:
+                alertMessage = HanaAlertMessage(title: "暂无 Release", message: "GitHub 上还没有可用于检查的正式 Release。")
+            }
+        } catch {
+            alertMessage = .error(error.localizedDescription)
+        }
     }
 }
-#endif
 
 private struct SettingsNavigationRow: View {
     let category: SettingsCategory
