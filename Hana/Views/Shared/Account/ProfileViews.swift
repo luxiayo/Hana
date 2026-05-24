@@ -67,7 +67,7 @@ struct ProfileAvatarView: View {
             Circle()
                 .fill(.secondary.opacity(0.16))
 
-            CoverView(url: url, fallbackSystemImage: "person.crop.circle.fill")
+            CoverView(url: url, fallbackSystemImage: "person.crop.circle.fill", blurInDemoMode: false)
         }
         .frame(width: 56, height: 56)
         .clipShape(Circle())

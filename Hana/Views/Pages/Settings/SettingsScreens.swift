@@ -328,6 +328,7 @@ private struct MacSettingsSidebarLabelStyle: LabelStyle {
 private struct MacGeneralSettingsScreen: View {
     @AppStorage(HanaSettingsKey.appearanceMode) private var appearanceMode = HanaAppearanceMode.system.rawValue
     @AppStorage(HanaSettingsKey.themeColor) private var themeColor = HanaThemeColor.defaultValue
+    @AppStorage(HanaSettingsKey.demoModeEnabled) private var demoModeEnabled = false
 
     var body: some View {
         Form {
@@ -356,6 +357,15 @@ private struct MacGeneralSettingsScreen: View {
                 .grayscale(1)
                 .opacity(0.45)
                 .accessibilityHint("macOS 版本固定使用粉色")
+
+                Toggle(isOn: $demoModeEnabled) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("演示模式")
+                        Text("开启后会模糊视频封面")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
         .formStyle(.grouped)
@@ -833,6 +843,7 @@ private struct DownloadSettingsScreen: View {
 private struct AppearanceSettingsScreen: View {
     @AppStorage(HanaSettingsKey.appearanceMode) private var appearanceMode = HanaAppearanceMode.system.rawValue
     @AppStorage(HanaSettingsKey.themeColor) private var themeColor = HanaThemeColor.defaultValue
+    @AppStorage(HanaSettingsKey.demoModeEnabled) private var demoModeEnabled = false
 
     var body: some View {
         Form {
@@ -855,6 +866,12 @@ private struct AppearanceSettingsScreen: View {
                 Text("色彩")
             }
             .pickerStyle(.inline)
+
+            Section {
+                Toggle("演示模式", isOn: $demoModeEnabled)
+            } footer: {
+                Text("开启后会模糊视频封面图片")
+            }
         }
         .navigationTitle("外观")
     }

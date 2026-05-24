@@ -577,7 +577,7 @@ struct HanimeCommentRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            CoverView(url: comment.avatarURL)
+            CoverView(url: comment.avatarURL, blurInDemoMode: false)
                 .frame(width: 38, height: 38)
                 .clipShape(Circle())
 

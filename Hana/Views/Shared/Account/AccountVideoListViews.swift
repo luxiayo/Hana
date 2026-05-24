@@ -430,7 +430,7 @@ struct SubscriptionArtistPill: View {
     var body: some View {
         VStack(spacing: 8) {
             ZStack(alignment: .bottomTrailing) {
-                CoverView(url: artist.avatarURL)
+                CoverView(url: artist.avatarURL, blurInDemoMode: false)
                     .frame(width: 56, height: 56)
                     .clipShape(Circle())
 

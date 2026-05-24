@@ -257,11 +257,13 @@ struct HanaVideoListRow: View {
 
 struct CoverView: View {
     @Environment(HanaServices.self) private var services
+    @AppStorage(HanaSettingsKey.demoModeEnabled) private var demoModeEnabled = false
     let url: URL?
     var contentMode: ContentMode = .fill
     var alignment: Alignment = .center
     var fallbackSystemImage = "play.rectangle"
     var placeholderCornerRadius: CGFloat = 8
+    var blurInDemoMode = true
 
     var body: some View {
         LazyImage(request: imageRequest) { state in
@@ -274,6 +276,7 @@ struct CoverView: View {
                         .resizable()
                         .aspectRatio(contentMode: contentMode)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
+                        .blur(radius: imageBlurRadius, opaque: true)
                 } else if url == nil || state.error != nil {
                     Image(systemName: fallbackSystemImage)
                         .font(.largeTitle)
@@ -285,6 +288,10 @@ struct CoverView: View {
         }
         .pipeline(services.imagePipeline)
         .clipped()
+    }
+
+    private var imageBlurRadius: CGFloat {
+        demoModeEnabled && blurInDemoMode ? 16 : 0
     }
 
     private var imageRequest: Nuke.ImageRequest? {

@@ -8,6 +8,7 @@ enum HanaSettingsKey {
     static let siteBaseURL = "hana.settings.siteBaseURL"
     static let appearanceMode = "hana.settings.appearanceMode"
     static let themeColor = "hana.settings.themeColor"
+    static let demoModeEnabled = "hana.settings.demoModeEnabled"
     static let defaultVideoQuality = "hana.settings.defaultVideoQuality"
     static let allowResumePlayback = "hana.settings.allowResumePlayback"
     static let showPlayedIndicator = "hana.settings.showPlayedIndicator"

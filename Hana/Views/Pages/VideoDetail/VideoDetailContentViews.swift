@@ -110,7 +110,7 @@ struct VideoArtistSection: View {
                             genre: HanimeSearchOptionCatalog.genreSearchKey(matching: artist.genre)
                         ))) {
                             HStack(spacing: 12) {
-                                CoverView(url: artist.avatarURL)
+                                CoverView(url: artist.avatarURL, blurInDemoMode: false)
                                     .frame(width: 52, height: 52)
                                     .clipShape(Circle())
 
