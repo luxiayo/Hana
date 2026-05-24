@@ -229,9 +229,22 @@ final class HanaHTTPClient {
     }
 
     private func cookieHeader(for url: URL) -> String? {
-        var pairs = HTTPCookieStorage.shared.cookies(for: url)?
-            .filter { $0.name != HanaVideoLanguagePreference.cookieName }
-            .map { "\($0.name)=\($0.value)" } ?? []
+        var names: Set<String> = []
+        var pairs: [String] = []
+
+        for cookie in HTTPCookieStorage.shared.cookies(for: url) ?? [] where cookie.name != HanaVideoLanguagePreference.cookieName {
+            names.insert(cookie.name)
+            pairs.append("\(cookie.name)=\(cookie.value)")
+        }
+
+        if isSiteURL(url),
+           let storedCookieHeader = SiteWebSession.storedCookieHeader(for: baseURL) {
+            for pair in cookiePairs(from: storedCookieHeader)
+            where pair.name != HanaVideoLanguagePreference.cookieName && !names.contains(pair.name) {
+                names.insert(pair.name)
+                pairs.append("\(pair.name)=\(pair.value)")
+            }
+        }
 
         if isSiteURL(url),
            let language = HanaVideoLanguagePreference.cookieValue(
@@ -241,6 +254,16 @@ final class HanaHTTPClient {
         }
 
         return pairs.isEmpty ? nil : pairs.joined(separator: "; ")
+    }
+
+    private func cookiePairs(from header: String) -> [(name: String, value: String)] {
+        header.split(separator: ";").compactMap { pair in
+            let parts = pair.split(separator: "=", maxSplits: 1).map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard parts.count == 2, !parts[0].isEmpty else { return nil }
+            return (name: parts[0], value: parts[1])
+        }
     }
 
     private func isSiteURL(_ url: URL) -> Bool {

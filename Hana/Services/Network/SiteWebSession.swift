@@ -35,11 +35,11 @@ final class SiteWebSession {
     var avatarURLString: String?
 
     private let defaults: UserDefaults
-    private let legacyCookieHeaderKey = "Hana.SiteWebSession.cookieHeader"
-    private let legacyIsLoggedInKey = "Hana.SiteWebSession.isLoggedIn"
-    private let legacyUserIDKey = "Hana.SiteWebSession.userID"
-    private let legacyUsernameKey = "Hana.SiteWebSession.username"
-    private let legacyAvatarURLStringKey = "Hana.SiteWebSession.avatarURLString"
+    private static let legacyCookieHeaderKey = "Hana.SiteWebSession.cookieHeader"
+    private static let legacyIsLoggedInKey = "Hana.SiteWebSession.isLoggedIn"
+    private static let legacyUserIDKey = "Hana.SiteWebSession.userID"
+    private static let legacyUsernameKey = "Hana.SiteWebSession.username"
+    private static let legacyAvatarURLStringKey = "Hana.SiteWebSession.avatarURLString"
 
     private var keySuffix: String {
         Self.keySuffix(for: baseURL)
@@ -88,7 +88,7 @@ final class SiteWebSession {
     }
 
     private var storedCookieHeader: String? {
-        defaults.string(forKey: cookieHeaderKey) ?? (canReadLegacyKeys ? defaults.string(forKey: legacyCookieHeaderKey) : nil)
+        Self.storedCookieHeader(for: baseURL, defaults: defaults)
     }
 
     init(baseURL: URL, defaults: UserDefaults = .standard) {
@@ -101,14 +101,14 @@ final class SiteWebSession {
         let usernameKey = Self.scopedKey("username", suffix: keySuffix)
         let avatarURLStringKey = Self.scopedKey("avatarURLString", suffix: keySuffix)
         self.isLoggedIn = defaults.object(forKey: isLoggedInKey) as? Bool
-            ?? (legacyHost ? defaults.bool(forKey: legacyIsLoggedInKey) : false)
+            ?? (legacyHost ? defaults.bool(forKey: Self.legacyIsLoggedInKey) : false)
         self.userID = defaults.string(forKey: userIDKey)
-            ?? (legacyHost ? defaults.string(forKey: legacyUserIDKey) : nil)
+            ?? (legacyHost ? defaults.string(forKey: Self.legacyUserIDKey) : nil)
         self.username = defaults.string(forKey: usernameKey)
-            ?? (legacyHost ? defaults.string(forKey: legacyUsernameKey) : nil)
+            ?? (legacyHost ? defaults.string(forKey: Self.legacyUsernameKey) : nil)
         self.avatarURLString = defaults.string(forKey: avatarURLStringKey)
-            ?? (legacyHost ? defaults.string(forKey: legacyAvatarURLStringKey) : nil)
-        restoreStoredCookies()
+            ?? (legacyHost ? defaults.string(forKey: Self.legacyAvatarURLStringKey) : nil)
+        loadStoredCookieMetadata()
     }
 
     @discardableResult
@@ -194,10 +194,17 @@ final class SiteWebSession {
         activeFlow = nil
     }
 
-    private func restoreStoredCookies() {
+    static func storedCookieHeader(for baseURL: URL, defaults: UserDefaults = .standard) -> String? {
+        let keySuffix = keySuffix(for: baseURL)
+        let cookieHeaderKey = scopedKey("cookieHeader", suffix: keySuffix)
+        let legacyHost = baseURL.host() == URL(string: HanaSiteBaseURL.defaultValue)?.host()
+        return defaults.string(forKey: cookieHeaderKey)
+            ?? (legacyHost ? defaults.string(forKey: legacyCookieHeaderKey) : nil)
+    }
+
+    private func loadStoredCookieMetadata() {
         guard let storedCookieHeader, !storedCookieHeader.isEmpty else { return }
         let cookies = cookies(from: storedCookieHeader)
-        cookies.forEach { HTTPCookieStorage.shared.setCookie($0) }
         lastSyncedCookieCount = cookies.count
     }
 
@@ -239,8 +246,11 @@ final class SiteWebSession {
     }
 
     private var cloudflareClearanceCookie: HTTPCookie? {
-        guard let cookies = HTTPCookieStorage.shared.cookies(for: baseURL) else { return nil }
-        return cookies.first { $0.name == "cf_clearance" }
+        if let cookie = HTTPCookieStorage.shared.cookies(for: baseURL)?.first(where: { $0.name == "cf_clearance" }) {
+            return cookie
+        }
+        guard let storedCookieHeader else { return nil }
+        return cookies(from: storedCookieHeader).first { $0.name == "cf_clearance" }
     }
 
     private func removeCookiesForCurrentHost() {
