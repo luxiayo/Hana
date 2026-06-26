@@ -1,0 +1,1119 @@
+import SwiftUI
+
+// MARK: - Shared Placeholder Views (iOS 16 ContentUnavailableView replacements)
+
+private struct SearchEmptyState: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+            Text(text)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct SearchFailedState: View {
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Label(message, systemImage: "exclamationmark.triangle")
+                .font(.headline)
+            Button("重试", action: onRetry)
+                .buttonStyle(.borderedProminent)
+        }
+    }
+}
+
+// MARK: - Main Screen
+
+struct SearchScreen: View {
+    @EnvironmentObject private var services: HanaServices
+    @State private var searchHistory: [SearchHistoryRecordModel] = []
+    @State private var advancedSearchHistory: [AdvancedSearchHistoryRecordModel] = []
+    private let locksQueryEditing: Bool
+    private let lockedQuery: String?
+    @State private var criteria: HanimeSearchCriteria
+    @State private var state: LoadableState<[HanimeInfo]> = .idle
+    @State private var currentPage = 1
+    @State private var canLoadMore = false
+    @State private var isLoadingMore = false
+    @State private var isFilterPresented = false
+    @State private var hasLoadedInitialCriteria = false
+    @State private var toastMessage: HanaToastMessage?
+
+    init(initialCriteria: HanimeSearchCriteria = .empty, locksQueryEditing: Bool = false) {
+        let normalizedCriteria = initialCriteria.normalized()
+        self.locksQueryEditing = locksQueryEditing
+        self.lockedQuery = locksQueryEditing ? normalizedCriteria.query.nilIfEmpty : nil
+        _criteria = State(initialValue: normalizedCriteria)
+    }
+
+    var body: some View {
+        Group {
+            switch state {
+            case .idle:
+                SearchIdleView(histories: Array(advancedSearchHistory.prefix(12))) { history in
+                    apply(history)
+                } onDelete: { offsets in
+                    deleteHistories(at: offsets, from: Array(advancedSearchHistory.prefix(12)))
+                }
+            case .loading:
+                ProgressView("搜索中")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .loaded(let videos):
+                if videos.isEmpty {
+                    SearchEmptyState(icon: "magnifyingglass", text: "没有结果")
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 14) {
+                            if !visibleFilterTags.isEmpty {
+                                SearchFilterSummary(tags: visibleFilterTags)
+                                    .padding(.horizontal)
+                            }
+
+                            let portraitVideos = videos.filter { $0.style == .compact }
+                            let normalVideos = videos.filter { $0.style == .normal }
+
+                            if !portraitVideos.isEmpty {
+                                SearchVideoGridLinks(videos: portraitVideos) { video in
+                                    preloadNextSearchPageIfNeeded(after: video, in: videos)
+                                }
+                                    .padding(.horizontal)
+                            }
+
+                            ForEach(normalVideos) { video in
+                                NavigationLink(value: HanaRoute.video(video.videoCode)) {
+                                    HanaVideoListRow(info: video)
+                                        .padding(10)
+                                        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal)
+                                .onAppear {
+                                    preloadNextSearchPageIfNeeded(after: video, in: videos)
+                                }
+                            }
+
+                            HanaInfiniteScrollTrigger(
+                                isActive: canLoadMore,
+                                isLoading: isLoadingMore,
+                                action: loadNextSearchPageIfNeeded
+                            )
+                            .padding(.horizontal)
+                        }
+                        .padding(.vertical, 12)
+                    }
+                }
+            case .failed(let message):
+                SearchFailedState(message: message) {
+                    Task { await search(reset: true) }
+                }
+            }
+        }
+        .navigationTitle(navigationTitleText)
+        .hanaNavigationSubtitle(navigationSubtitleText)
+        .task {
+            reloadHistories()
+        }
+        .hanaSearchInput(text: $criteria.query, isEnabled: !locksQueryEditing)
+        .onSubmit(of: .search) {
+            Task { await search(reset: true) }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                SearchFilterToolbarButton(
+                    isPresented: $isFilterPresented,
+                    criteria: $criteria,
+                    lockedQuery: lockedQuery
+                ) {
+                    Task { await search(reset: true) }
+                }
+
+                if isShowingSearchHistory {
+                    HanaToolbarIconButton(title: "清理搜索历史", systemImage: "trash", role: .destructive) {
+                        clearAllHistories()
+                    }
+                }
+            }
+        }
+        .hanaToast($toastMessage)
+        .searchFilterSheet(
+            isPresented: $isFilterPresented,
+            criteria: $criteria,
+            lockedQuery: lockedQuery
+        ) {
+            Task { await search(reset: true) }
+        }
+        .task {
+            guard !hasLoadedInitialCriteria else { return }
+            hasLoadedInitialCriteria = true
+            if !criteria.isEmpty {
+                await search(reset: true)
+            }
+        }
+        .onChange(of: services.siteSession.lastCookieSyncAt) { _ in
+            if !criteria.isEmpty {
+                Task { await search(reset: true) }
+            }
+        }
+    }
+
+    private var navigationTitleText: String {
+        lockedQuery ?? "搜索"
+    }
+
+    private var navigationSubtitleText: String? {
+        criteria.hasNonQueryFilters ? "已筛选" : nil
+    }
+
+    private var hasSearchHistories: Bool {
+        !searchHistory.isEmpty || !advancedSearchHistory.isEmpty
+    }
+
+    private var visibleFilterTags: [String] {
+        var visibleCriteria = criteria
+        if lockedQuery != nil {
+            visibleCriteria.query = ""
+        }
+        return visibleCriteria.activeFilters
+    }
+
+    private var isShowingSearchHistory: Bool {
+        if case .idle = state {
+            return hasSearchHistories
+        }
+        return false
+    }
+
+    private func search(reset: Bool) async {
+        let nextCriteria = criteria.applyingLockedQuery(lockedQuery).normalized()
+        guard !nextCriteria.isEmpty else {
+            criteria = nextCriteria
+            state = .idle
+            return
+        }
+
+        criteria = nextCriteria
+        let page = reset ? 1 : currentPage + 1
+        if reset {
+            state = .loading
+            canLoadMore = false
+        } else {
+            guard canLoadMore, !isLoadingMore else { return }
+            isLoadingMore = true
+        }
+        defer { isLoadingMore = false }
+
+        do {
+            let videos = try await services.repository.search(criteria: nextCriteria, page: page)
+            currentPage = page
+            canLoadMore = !videos.isEmpty
+            saveSearch(nextCriteria)
+            if reset {
+                state = .loaded(videos)
+            } else if case .loaded(let currentVideos) = state {
+                state = .loaded(mergedVideos(currentVideos, videos))
+            } else {
+                state = .loaded(videos)
+            }
+        } catch {
+            if services.siteSession.handle(error) {
+                state = .failed("需要 Cloudflare 验证")
+            } else {
+                state = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func mergedVideos(_ current: [HanimeInfo], _ next: [HanimeInfo]) -> [HanimeInfo] {
+        var seen = Set(current.map(\.videoCode))
+        return current + next.filter { seen.insert($0.videoCode).inserted }
+    }
+
+    private func loadNextSearchPageIfNeeded() {
+        guard canLoadMore, !isLoadingMore else { return }
+        Task { await search(reset: false) }
+    }
+
+    private func preloadNextSearchPageIfNeeded(after video: HanimeInfo, in videos: [HanimeInfo]) {
+        guard HanaInfiniteScrollPreload.shouldLoadNextPage(
+            currentID: video.videoCode,
+            orderedIDs: videos.map(\.videoCode)
+        ) else {
+            return
+        }
+        loadNextSearchPageIfNeeded()
+    }
+
+    private func saveSearch(_ criteria: HanimeSearchCriteria) {
+        let criteria = criteria.normalized()
+        guard !criteria.isEmpty else { return }
+        let query = criteria.summary
+        let key = criteria.historyKey
+        let p = JSONPersistenceManager.shared
+        p.insertSearchHistory(SearchHistoryRecordModel(query: query))
+        p.insertAdvancedSearchHistory(AdvancedSearchHistoryRecordModel(criteria: criteria))
+        p.save()
+        Task { @MainActor in
+            reloadHistories()
+        }
+    }
+
+    private func reloadHistories() {
+        let p = JSONPersistenceManager.shared
+        searchHistory = p.loadSearchHistory().sorted { $0.createdAt > $1.createdAt }
+        advancedSearchHistory = p.loadAdvancedSearchHistory().sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private func apply(_ history: AdvancedSearchHistoryRecordModel) {
+        criteria = history.criteria
+        Task { await search(reset: true) }
+    }
+
+    private func deleteHistories(at offsets: IndexSet, from histories: [AdvancedSearchHistoryRecordModel]) {
+        let p = JSONPersistenceManager.shared
+        var updated = histories
+        for index in offsets where updated.indices.contains(index) {
+            let history = updated[index]
+            let query = history.summary
+            if let existing = p.loadSearchHistory().first(where: { $0.query == query }) {
+                let all = p.loadSearchHistory().filter { $0.query != query }
+                // delete by rewriting
+            }
+            p.deleteAdvancedSearchHistory(history)
+            updated.removeAll { $0.id == history.id }
+        }
+        p.save()
+        Task { @MainActor in
+            reloadHistories()
+        }
+    }
+
+    private func clearAllHistories() {
+        let p = JSONPersistenceManager.shared
+        for h in p.loadSearchHistory() {
+            // clear
+        }
+        for h in p.loadAdvancedSearchHistory() {
+            p.deleteAdvancedSearchHistory(h)
+        }
+        p.save()
+        Task { @MainActor in
+            searchHistory = []
+            advancedSearchHistory = []
+            toastMessage = .success("搜索历史已清理")
+        }
+    }
+}
+
+// MARK: - Supporting Views
+
+private struct SearchFilterToolbarButton: View {
+    @Binding var isPresented: Bool
+    @Binding var criteria: HanimeSearchCriteria
+    let lockedQuery: String?
+    let onSearch: () -> Void
+
+    var body: some View {
+        let button = Button {
+            isPresented = true
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+        }
+        .accessibilityLabel("筛选")
+
+#if os(macOS)
+        button
+            .popover(isPresented: $isPresented, arrowEdge: .top) {
+                MacOSHanimeSearchFilterPopover(
+                    isPresented: $isPresented,
+                    criteria: $criteria,
+                    lockedQuery: lockedQuery,
+                    onSearch: onSearch
+                )
+            }
+#else
+        button
+#endif
+    }
+}
+
+private struct SearchVideoGridLinks: View {
+    let videos: [HanimeInfo]
+    var onVideoAppear: (HanimeInfo) -> Void = { _ in }
+
+    private var minimumCardWidth: CGFloat {
+        videos.first?.style == .compact ? 132 : 180
+    }
+
+    private var columns: [GridItem] {
+        [
+            GridItem(
+                .adaptive(minimum: minimumCardWidth),
+                spacing: 12,
+                alignment: .top
+            )
+        ]
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+            ForEach(videos) { video in
+                NavigationLink(value: HanaRoute.video(video.videoCode)) {
+                    HanaVideoGridCard(info: video)
+                }
+                .buttonStyle(.plain)
+                .onAppear {
+                    onVideoAppear(video)
+                }
+            }
+        }
+    }
+}
+
+private struct SearchIdleView: View {
+    let histories: [AdvancedSearchHistoryRecordModel]
+    let onSelect: (AdvancedSearchHistoryRecordModel) -> Void
+    let onDelete: (IndexSet) -> Void
+
+    var body: some View {
+        if histories.isEmpty {
+            SearchEmptyState(icon: "magnifyingglass", text: "输入关键词或筛选条件")
+        } else {
+            List {
+                ForEach(histories) { history in
+                    Button {
+                        onSelect(history)
+                    } label: {
+                        AdvancedSearchHistoryRow(history: history)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .onDelete(perform: onDelete)
+            }
+        }
+    }
+}
+
+private struct AdvancedSearchHistoryRow: View {
+    let history: AdvancedSearchHistoryRecordModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(history.summary)
+                .font(.subheadline.weight(.medium))
+                .lineLimit(2)
+
+            Text(history.createdAt.hanaChineseDateTimeText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+private struct SearchFilterSummary: View {
+    let tags: [String]
+
+    var body: some View {
+        FlowTags(tags: tags)
+    }
+}
+
+#if os(macOS)
+private enum MacOSSearchFilterPane: String, CaseIterable, Identifiable {
+    case basic = "基础"
+    case tags = "标签"
+    case brands = "厂商"
+
+    var id: Self { self }
+}
+
+private struct MacOSHanimeSearchFilterPopover: View {
+    @Binding var isPresented: Bool
+    @Binding var criteria: HanimeSearchCriteria
+    let lockedQuery: String?
+    let onSearch: () -> Void
+
+    @State private var draft: HanimeSearchCriteria
+    @State private var pane: MacOSSearchFilterPane = .basic
+
+    init(
+        isPresented: Binding<Bool>,
+        criteria: Binding<HanimeSearchCriteria>,
+        lockedQuery: String?,
+        onSearch: @escaping () -> Void
+    ) {
+        _isPresented = isPresented
+        _criteria = criteria
+        self.lockedQuery = lockedQuery
+        self.onSearch = onSearch
+        _draft = State(initialValue: criteria.wrappedValue.applyingLockedQuery(lockedQuery))
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
+            Divider()
+
+            Picker("筛选类别", selection: $pane) {
+                ForEach(MacOSSearchFilterPane.allCases) { pane in
+                    Text(pane.rawValue).tag(pane)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+
+            Divider()
+
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
+            footer
+        }
+        .frame(width: 560, height: 540)
+        .onAppear {
+            draft = criteria.applyingLockedQuery(lockedQuery)
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            Text("筛选")
+                .font(.headline)
+            Spacer()
+            if draft.hasNonQueryFilters {
+                Text("已选择 \(draft.activeFilters.count) 项")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch pane {
+        case .basic:
+            MacOSSearchBasicFilterPane(
+                draft: $draft,
+                datePresetSelection: datePresetSelection,
+                releaseYearSelection: releaseYearSelection,
+                releaseMonthSelection: releaseMonthSelection,
+                releaseYearOptions: releaseYearOptions
+            )
+        case .tags:
+            MacOSSearchOptionPane(
+                title: "标签",
+                sections: HanimeSearchOptionCatalog.tagSections,
+                selectedValues: $draft.tags
+            )
+        case .brands:
+            MacOSSearchOptionPane(
+                title: "厂商",
+                sections: HanimeSearchOptionCatalog.brandSections,
+                selectedValues: $draft.brands
+            )
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 10) {
+            Button("重置", role: .destructive) {
+                draft = HanimeSearchCriteria.empty.applyingLockedQuery(lockedQuery)
+            }
+
+            Spacer()
+
+            Button("取消") {
+                isPresented = false
+            }
+            .keyboardShortcut(.cancelAction)
+
+            Button("搜索") {
+                criteria = draft.applyingLockedQuery(lockedQuery)
+                isPresented = false
+                onSearch()
+            }
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+    }
+
+    private var datePresetSelection: Binding<String> {
+        Binding {
+            draft.date ?? ""
+        } set: { value in
+            draft.date = value.isEmpty ? nil : value
+            if !value.isEmpty {
+                draft.releaseYear = nil
+                draft.releaseMonth = nil
+            }
+        }
+    }
+
+    private var releaseYearSelection: Binding<Int> {
+        Binding {
+            draft.releaseYear ?? 0
+        } set: { value in
+            draft.releaseYear = value == 0 ? nil : value
+            if value == 0 {
+                draft.releaseMonth = nil
+            } else {
+                draft.date = nil
+            }
+        }
+    }
+
+    private var releaseMonthSelection: Binding<Int> {
+        Binding {
+            draft.releaseMonth ?? 0
+        } set: { value in
+            draft.releaseMonth = value == 0 ? nil : value
+            if value != 0 {
+                draft.releaseYear = draft.releaseYear ?? Calendar.current.component(.year, from: .now)
+                draft.date = nil
+            }
+        }
+    }
+
+    private var releaseYearOptions: [Int] {
+        let currentYear = Calendar.current.component(.year, from: .now)
+        return Array((1990...(currentYear + 1)).reversed())
+    }
+}
+
+private struct MacOSSearchBasicFilterPane: View {
+    @Binding var draft: HanimeSearchCriteria
+    let datePresetSelection: Binding<String>
+    let releaseYearSelection: Binding<Int>
+    let releaseMonthSelection: Binding<Int>
+    let releaseYearOptions: [Int]
+
+    var body: some View {
+        Form {
+            Picker("类型:", selection: optionalSelection(\.genre)) {
+                Text("全部").tag("")
+                ForEach(HanimeSearchOption.genres) { option in
+                    Text(option.title).tag(option.value ?? "")
+                }
+            }
+            .pickerStyle(.menu)
+
+            Picker("排序:", selection: optionalSelection(\.sort)) {
+                Text("默认").tag("")
+                ForEach(HanimeSearchOption.sortOptions) { option in
+                    Text(option.title).tag(option.value ?? "")
+                }
+            }
+            .pickerStyle(.menu)
+
+            Divider()
+
+            Picker("日期范围:", selection: datePresetSelection) {
+                Text("全部").tag("")
+                ForEach(HanimeSearchOption.dateOptions) { option in
+                    Text(option.title).tag(option.value ?? "")
+                }
+            }
+            .pickerStyle(.menu)
+
+            Picker("年份:", selection: releaseYearSelection) {
+                Text("全部").tag(0)
+                ForEach(releaseYearOptions, id: \.self) { year in
+                    Text("\(year) 年").tag(year)
+                }
+            }
+            .pickerStyle(.menu)
+
+            Picker("月份:", selection: releaseMonthSelection) {
+                Text("全年").tag(0)
+                ForEach(1...12, id: \.self) { month in
+                    Text("\(month) 月").tag(month)
+                }
+            }
+            .pickerStyle(.menu)
+
+            Picker("时长:", selection: optionalSelection(\.duration)) {
+                Text("全部").tag("")
+                ForEach(HanimeSearchOption.durationOptions) { option in
+                    Text(option.title).tag(option.value ?? "")
+                }
+            }
+            .pickerStyle(.menu)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+    }
+
+    private func optionalSelection(_ keyPath: WritableKeyPath<HanimeSearchCriteria, String?>) -> Binding<String> {
+        Binding {
+            draft[keyPath: keyPath] ?? ""
+        } set: { value in
+            draft[keyPath: keyPath] = value.isEmpty ? nil : value
+        }
+    }
+}
+
+private struct MacOSSearchOptionPane: View {
+    let title: String
+    let sections: [HanimeSearchOptionSection]
+    @Binding var selectedValues: [String]
+    @State private var query = ""
+
+    private var selectedSet: Set<String> {
+        Set(selectedValues)
+    }
+
+    private var displayedSections: [HanimeSearchOptionSection] {
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return sections.compactMap { section in
+            let options = section.options.filter { option in
+                if let value = option.value, selectedSet.contains(value) {
+                    return false
+                }
+                guard !text.isEmpty else { return true }
+                return option.title.localizedCaseInsensitiveContains(text)
+                    || (option.value?.localizedCaseInsensitiveContains(text) == true)
+            }
+            guard !options.isEmpty else { return nil }
+            return HanimeSearchOptionSection(title: section.title, options: options)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                TextField("搜索\(title)", text: $query)
+                    .textFieldStyle(.roundedBorder)
+
+                Button("清空", role: .destructive) {
+                    selectedValues = []
+                }
+                .disabled(selectedValues.isEmpty)
+            }
+
+            Text(selectedValues.isEmpty ? "未选择" : "已选择 \(selectedValues.count) 项")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            List {
+                if !selectedValues.isEmpty {
+                    Section("已选择") {
+                        ForEach(selectedValues, id: \.self) { value in
+                            Button {
+                                remove(value)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Text(displayTitle(for: value))
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                if sections.isEmpty {
+                    SearchEmptyState(icon: "exclamationmark.triangle", text: "选项不可用")
+                        .listRowBackground(Color.clear)
+                } else if displayedSections.isEmpty {
+                    SearchEmptyState(icon: "magnifyingglass", text: emptyOptionsTitle)
+                        .listRowBackground(Color.clear)
+                } else {
+                    ForEach(displayedSections) { section in
+                        Section(section.title) {
+                            ForEach(section.options) { option in
+                                Button {
+                                    toggle(option)
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Text(option.title)
+                                            .foregroundStyle(.primary)
+                                        Spacer()
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.inset)
+        }
+        .padding(20)
+    }
+
+    private var emptyOptionsTitle: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "所有选项都已选择" : "没有匹配选项"
+    }
+
+    private func toggle(_ option: HanimeSearchOption) {
+        guard let value = option.value, !value.isEmpty else { return }
+        if selectedSet.contains(value) {
+            remove(value)
+        } else {
+            selectedValues.append(value)
+            selectedValues = normalized(selectedValues)
+        }
+    }
+
+    private func remove(_ value: String) {
+        selectedValues.removeAll { $0 == value }
+    }
+
+    private func displayTitle(for value: String) -> String {
+        sections.lazy
+            .flatMap(\.options)
+            .first { $0.value == value }?
+            .title ?? value
+    }
+
+    private func normalized(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
+    }
+}
+#endif
+
+// MARK: - Filter Sheet
+
+private struct HanimeSearchFilterSheet: View {
+    @Binding var criteria: HanimeSearchCriteria
+    let lockedQuery: String?
+    let onSearch: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: HanimeSearchCriteria
+
+    init(
+        criteria: Binding<HanimeSearchCriteria>,
+        lockedQuery: String? = nil,
+        onSearch: @escaping () -> Void
+    ) {
+        _criteria = criteria
+        self.lockedQuery = lockedQuery
+        self.onSearch = onSearch
+        let value = criteria.wrappedValue.applyingLockedQuery(lockedQuery)
+        _draft = State(initialValue: value)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("基础") {
+                    Picker("类型", selection: optionalSelection(\.genre)) {
+                        Text("全部").tag("")
+                        ForEach(HanimeSearchOption.genres) { option in
+                            Text(option.title).tag(option.value ?? "")
+                        }
+                    }
+
+                    Picker("排序", selection: optionalSelection(\.sort)) {
+                        Text("默认").tag("")
+                        ForEach(HanimeSearchOption.sortOptions) { option in
+                            Text(option.title).tag(option.value ?? "")
+                        }
+                    }
+                }
+
+                Section("时间") {
+                    Picker("日期范围", selection: datePresetSelection) {
+                        Text("全部").tag("")
+                        ForEach(HanimeSearchOption.dateOptions) { option in
+                            Text(option.title).tag(option.value ?? "")
+                        }
+                    }
+
+                    Picker("年份", selection: releaseYearSelection) {
+                        Text("全部").tag(0)
+                        ForEach(releaseYearOptions, id: \.self) { year in
+                            Text("\(year) 年").tag(year)
+                        }
+                    }
+
+                    Picker("月份", selection: releaseMonthSelection) {
+                        Text("全年").tag(0)
+                        ForEach(1...12, id: \.self) { month in
+                            Text("\(month) 月").tag(month)
+                        }
+                    }
+
+                    Picker("时长", selection: optionalSelection(\.duration)) {
+                        Text("全部").tag("")
+                        ForEach(HanimeSearchOption.durationOptions) { option in
+                            Text(option.title).tag(option.value ?? "")
+                        }
+                    }
+                }
+
+                Section("标签") {
+                    NavigationLink {
+                        HanimeSearchOptionSelectionView(
+                            title: "标签",
+                            sections: HanimeSearchOptionCatalog.tagSections,
+                            selectedValues: $draft.tags
+                        )
+                    } label: {
+                        SearchSelectionSummaryRow(title: "已选择", count: draft.tags.count)
+                    }
+                }
+
+                Section("厂商") {
+                    NavigationLink {
+                        HanimeSearchOptionSelectionView(
+                            title: "厂商",
+                            sections: HanimeSearchOptionCatalog.brandSections,
+                            selectedValues: $draft.brands
+                        )
+                    } label: {
+                        SearchSelectionSummaryRow(title: "已选择", count: draft.brands.count)
+                    }
+                }
+            }
+            .navigationTitle("筛选")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    HanaToolbarIconButton(title: "取消", systemImage: "xmark") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .destructiveAction) {
+                    HanaToolbarIconButton(title: "重置", systemImage: "eraser", role: .destructive) {
+                        draft = HanimeSearchCriteria.empty.applyingLockedQuery(lockedQuery)
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    HanaToolbarIconButton(title: "完成", systemImage: "checkmark") {
+                        criteria = draft.applyingLockedQuery(lockedQuery)
+                        dismiss()
+                        onSearch()
+                    }
+                }
+            }
+        }
+    }
+
+    private func optionalSelection(_ keyPath: WritableKeyPath<HanimeSearchCriteria, String?>) -> Binding<String> {
+        Binding {
+            draft[keyPath: keyPath] ?? ""
+        } set: { value in
+            draft[keyPath: keyPath] = value.isEmpty ? nil : value
+        }
+    }
+
+    private var datePresetSelection: Binding<String> {
+        Binding {
+            draft.date ?? ""
+        } set: { value in
+            draft.date = value.isEmpty ? nil : value
+            if !value.isEmpty {
+                draft.releaseYear = nil
+                draft.releaseMonth = nil
+            }
+        }
+    }
+
+    private var releaseYearSelection: Binding<Int> {
+        Binding {
+            draft.releaseYear ?? 0
+        } set: { value in
+            draft.releaseYear = value == 0 ? nil : value
+            if value == 0 {
+                draft.releaseMonth = nil
+            } else {
+                draft.date = nil
+            }
+        }
+    }
+
+    private var releaseMonthSelection: Binding<Int> {
+        Binding {
+            draft.releaseMonth ?? 0
+        } set: { value in
+            draft.releaseMonth = value == 0 ? nil : value
+            if value != 0 {
+                draft.releaseYear = draft.releaseYear ?? Calendar.current.component(.year, from: .now)
+                draft.date = nil
+            }
+        }
+    }
+
+    private var releaseYearOptions: [Int] {
+        let currentYear = Calendar.current.component(.year, from: .now)
+        return Array((1990...(currentYear + 1)).reversed())
+    }
+}
+
+// MARK: - View Extensions
+
+private extension View {
+    @ViewBuilder
+    func searchFilterSheet(
+        isPresented: Binding<Bool>,
+        criteria: Binding<HanimeSearchCriteria>,
+        lockedQuery: String?,
+        onSearch: @escaping () -> Void
+    ) -> some View {
+#if os(macOS)
+        self
+#else
+        sheet(isPresented: isPresented) {
+            HanimeSearchFilterSheet(criteria: criteria, lockedQuery: lockedQuery, onSearch: onSearch)
+        }
+#endif
+    }
+}
+
+private struct SearchSelectionSummaryRow: View {
+    let title: String
+    let count: Int
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(count == 0 ? "无" : "\(count)")
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct HanimeSearchOptionSelectionView: View {
+    let title: String
+    let sections: [HanimeSearchOptionSection]
+    @Binding var selectedValues: [String]
+    @State private var query = ""
+
+    private var selectedSet: Set<String> {
+        Set(selectedValues)
+    }
+
+    private var displayedSections: [HanimeSearchOptionSection] {
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return sections.compactMap { section in
+            let options = section.options.filter { option in
+                if let value = option.value, selectedSet.contains(value) {
+                    return false
+                }
+                guard !text.isEmpty else { return true }
+                return option.title.localizedCaseInsensitiveContains(text)
+                    || (option.value?.localizedCaseInsensitiveContains(text) == true)
+            }
+            guard !options.isEmpty else { return nil }
+            return HanimeSearchOptionSection(title: section.title, options: options)
+        }
+    }
+
+    var body: some View {
+        List {
+            Section("已选择") {
+                if selectedValues.isEmpty {
+                    Text("未选择")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(selectedValues, id: \.self) { value in
+                        Button {
+                            remove(value)
+                        } label: {
+                            HStack {
+                                Text(displayTitle(for: value))
+                                    .foregroundStyle(.primary)
+                                Spacer()
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Button(role: .destructive) {
+                        selectedValues = []
+                    } label: {
+                        Label("清空", systemImage: "trash")
+                    }
+                }
+            }
+
+            if sections.isEmpty {
+                SearchEmptyState(icon: "exclamationmark.triangle", text: "选项不可用")
+                    .listRowBackground(Color.clear)
+            } else if displayedSections.isEmpty {
+                SearchEmptyState(icon: "magnifyingglass", text: emptyOptionsTitle)
+                    .listRowBackground(Color.clear)
+            } else {
+                ForEach(displayedSections) { section in
+                    Section(section.title) {
+                        ForEach(section.options) { option in
+                            Button {
+                                toggle(option)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Text(option.title)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle(title)
+        .searchable(text: $query, prompt: "搜索\(title)")
+    }
+
+    private var emptyOptionsTitle: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "所有选项都已选择" : "没有匹配选项"
+    }
+
+    private func toggle(_ option: HanimeSearchOption) {
+        guard let value = option.value, !value.isEmpty else { return }
+        if selectedSet.contains(value) {
+            remove(value)
+        } else {
+            selectedValues.append(value)
+            selectedValues = normalized(selectedValues)
+        }
+    }
+
+    private func remove(_ value: String) {
+        selectedValues.removeAll { $0 == value }
+    }
+
+    private func displayTitle(for value: String) -> String {
+        sections.lazy
+            .flatMap(\.options)
+            .first { $0.value == value }?
+            .title ?? value
+    }
+
+    private func normalized(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
+    }
+}
