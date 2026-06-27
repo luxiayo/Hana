@@ -350,12 +350,21 @@ struct DownloadsScreen: View {
     private func delete(items: [DownloadQueueRecordModel]) {
         for item in items {
             services.downloadClient.cancel(id: item.id)
+            // Try to find and delete local file
             if let localURL = localFileURL(for: item) {
                 try? services.downloadClient.deleteLocalDownload(fileURL: localURL)
+            } else if let videoCode = item.videoCode.nilIfEmpty {
+                // Fallback: scan all local downloads for matching video
+                if let files = try? services.downloadClient.localDownloads() {
+                    for file in files where file.videoCode == videoCode {
+                        try? services.downloadClient.deleteLocalDownload(fileURL: file.fileURL)
+                    }
+                }
             }
             persistence.deleteDownloadQueue(item)
         }
         downloadRecords = persistence.loadDownloadQueue()
+        downloadGroupRecords = persistence.loadDownloadGroups()
     }
 
     private var downloadGroupNames: [String] {
