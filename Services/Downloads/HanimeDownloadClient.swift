@@ -899,6 +899,7 @@ final class HanimeDownloadClient: ObservableObject {
             downloadedByteCount: downloadedByteCount,
             expectedByteCount: expectedByteCount
         )
+        syncTaskToPersistence(requestID: requestID)
     }
 
     fileprivate func completeTask(
@@ -922,6 +923,7 @@ final class HanimeDownloadClient: ObservableObject {
             }
         }
         continuationsByTaskID.removeValue(forKey: taskIdentifier)?.resume(returning: file)
+        syncTaskToPersistence(requestID: request.id)
     }
 
     fileprivate func completeTask(
@@ -950,6 +952,10 @@ final class HanimeDownloadClient: ObservableObject {
             }
         }
         requestIDsByTaskID[taskIdentifier] = nil
+
+        if let resolvedRequestID {
+            syncTaskToPersistence(requestID: resolvedRequestID)
+        }
 
         if let error {
             continuationsByTaskID.removeValue(forKey: taskIdentifier)?.resume(throwing: error)
@@ -981,5 +987,25 @@ final class HanimeDownloadClient: ObservableObject {
             return nil
         }
         return try? JSONDecoder().decode(HanimeDownloadRequest.self, from: data)
+    }
+
+    private func syncTaskToPersistence(requestID: String) {
+        guard let task = try? stateStore.task(id: requestID) else { return }
+        let p = JSONPersistenceManager.shared
+        var records = p.loadDownloadQueue()
+        if let existing = records.first(where: { $0.id == requestID }) {
+            HanaDownloadRecordSynchronizer.apply(task, to: existing)
+        } else {
+            let record = DownloadQueueRecordModel(
+                videoCode: task.request.videoCode,
+                title: task.request.title,
+                coverURLString: task.request.coverURLString,
+                quality: task.request.quality,
+                mediaURLString: task.request.mediaURL.absoluteString
+            )
+            HanaDownloadRecordSynchronizer.apply(task, to: record)
+            records.append(record)
+        }
+        p.save()
     }
 }
