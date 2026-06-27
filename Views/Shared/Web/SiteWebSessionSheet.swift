@@ -10,9 +10,6 @@ struct SiteWebSessionSheet: View {
 
     var body: some View {
         content
-#if os(macOS)
-            .frame(minWidth: 760, idealWidth: 900, minHeight: 560, idealHeight: 640)
-#endif
     }
 
     private var content: some View {
@@ -41,7 +38,6 @@ struct SiteWebSessionSheet: View {
     }
 }
 
-#if os(iOS) || os(visionOS)
 struct SiteWebView: UIViewRepresentable {
     let flow: SiteWebFlow
     let onCookiesChanged: ([HTTPCookie]) -> Void
@@ -67,33 +63,6 @@ struct SiteWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
 }
-#elseif os(macOS)
-struct SiteWebView: NSViewRepresentable {
-    let flow: SiteWebFlow
-    let onCookiesChanged: ([HTTPCookie]) -> Void
-    let onFlowCompleted: ([HTTPCookie]) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(
-            flow: flow,
-            onCookiesChanged: onCookiesChanged,
-            onFlowCompleted: onFlowCompleted
-        )
-    }
-
-    func makeNSView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.customUserAgent = HanaHTTPClient.userAgent
-        webView.navigationDelegate = context.coordinator
-        webView.load(URLRequest(url: flow.url))
-        return webView
-    }
-
-    func updateNSView(_ webView: WKWebView, context: Context) {}
-}
-#endif
 
 extension SiteWebView {
     final class Coordinator: NSObject, WKNavigationDelegate {

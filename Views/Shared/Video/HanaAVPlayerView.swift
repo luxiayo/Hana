@@ -1,11 +1,7 @@
 import AVFoundation
 import AVKit
 import SwiftUI
-#if canImport(UIKit)
 import UIKit
-#elseif canImport(AppKit)
-import AppKit
-#endif
 
 enum HanaVideoFullscreenOrientation: Hashable {
     case portrait
@@ -21,7 +17,6 @@ enum HanaVideoFullscreenOrientation: Hashable {
     }
 }
 
-#if canImport(UIKit)
 struct HanaAVPlayerView: UIViewControllerRepresentable {
     let player: AVPlayer?
     let allowsPictureInPicture: Bool
@@ -395,169 +390,6 @@ struct HanaAVPlayerView: UIViewControllerRepresentable {
         }
     }
 }
-#elseif canImport(AppKit)
-struct HanaAVPlayerView: NSViewRepresentable {
-    let player: AVPlayer?
-    let allowsPictureInPicture: Bool
-    var exitsFullScreenWhenPlaybackEnds = true
-    let gestureConfiguration: HanaPlayerGestureConfiguration
-    var fullscreenStatusOverlay: AnyView? = nil
-    var onFullscreenChange: (Bool) -> Void = { _ in }
-    var onPotentialFullscreenIntent: () -> Void = {}
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
-        configure(view, context: context)
-        return view
-    }
-
-    func updateNSView(_ view: AVPlayerView, context: Context) {
-        configure(view, context: context)
-    }
-
-    static func dismantleNSView(_ view: AVPlayerView, coordinator: Coordinator) {
-        coordinator.removeFullscreenOverlay()
-        view.delegate = nil
-        view.player = nil
-    }
-
-    private func configure(_ view: AVPlayerView, context: Context) {
-        if view.player !== player {
-            view.player = player
-        }
-        view.delegate = context.coordinator
-        view.controlsStyle = .inline
-        view.allowsPictureInPicturePlayback = allowsPictureInPicture
-        view.showsFullScreenToggleButton = true
-        context.coordinator.onFullscreenChange = onFullscreenChange
-        context.coordinator.updateFullscreenStatusOverlay(fullscreenStatusOverlay, on: view)
-    }
-
-    final class Coordinator: NSObject, AVPlayerViewDelegate {
-        var onFullscreenChange: (Bool) -> Void = { _ in }
-        private(set) var isFullscreenActive = false
-        private weak var playerView: AVPlayerView?
-        private var currentFullscreenStatusOverlay: AnyView?
-        private var fullscreenStatusHost: NSHostingView<AnyView>?
-        private var fullscreenStatusConstraints: [NSLayoutConstraint] = []
-
-        func playerViewWillEnterFullScreen(_ playerView: AVPlayerView) {
-            HanaAVPlayerFullscreenState.begin()
-            isFullscreenActive = true
-            reinstallFullscreenStatusOverlay(on: playerView)
-            setFullscreenStatusOverlayVisible(true)
-            onFullscreenChange(true)
-        }
-
-        func playerViewDidEnterFullScreen(_ playerView: AVPlayerView) {
-            reinstallFullscreenStatusOverlay(on: playerView)
-            setFullscreenStatusOverlayVisible(true)
-        }
-
-        func playerViewWillExitFullScreen(_ playerView: AVPlayerView) {
-            setFullscreenStatusOverlayVisible(false)
-        }
-
-        func playerViewDidExitFullScreen(_ playerView: AVPlayerView) {
-            isFullscreenActive = false
-            setFullscreenStatusOverlayVisible(false)
-            HanaAVPlayerFullscreenState.end()
-            onFullscreenChange(false)
-        }
-
-        func playerView(
-            _ playerView: AVPlayerView,
-            restoreUserInterfaceForFullScreenExitWithCompletionHandler completionHandler: @escaping (Bool) -> Void
-        ) {
-            completionHandler(true)
-        }
-
-        func updateFullscreenStatusOverlay(_ overlay: AnyView?, on view: AVPlayerView) {
-            playerView = view
-            currentFullscreenStatusOverlay = overlay
-            guard let overlayContainer = view.contentOverlayView else {
-                removeFullscreenOverlay()
-                return
-            }
-            updateFullscreenStatusOverlay(overlay, in: overlayContainer)
-        }
-
-        private func reinstallFullscreenStatusOverlay(on view: AVPlayerView) {
-            updateFullscreenStatusOverlay(currentFullscreenStatusOverlay, on: view)
-        }
-
-        private func setFullscreenStatusOverlayVisible(_ isVisible: Bool) {
-            fullscreenStatusHost?.isHidden = !isVisible
-            if isVisible, let statusView = fullscreenStatusHost {
-                statusView.superview?.addSubview(statusView, positioned: .above, relativeTo: nil)
-            }
-        }
-
-        private func updateFullscreenStatusOverlay(_ overlay: AnyView?, in overlayContainer: NSView) {
-            guard let overlay else {
-                removeFullscreenStatusOverlay()
-                return
-            }
-
-            guard let screen = overlayContainer.window?.screen else {
-                removeFullscreenStatusOverlay()
-                return
-            }
-
-            if let fullscreenStatusHost {
-                fullscreenStatusHost.rootView = overlay
-                attachFullscreenStatusHost(fullscreenStatusHost, to: overlayContainer, screen: screen)
-                fullscreenStatusHost.isHidden = !isFullscreenActive
-                return
-            }
-
-            let host = NSHostingView(rootView: overlay)
-            host.translatesAutoresizingMaskIntoConstraints = false
-            host.isHidden = !isFullscreenActive
-            attachFullscreenStatusHost(host, to: overlayContainer, screen: screen)
-            fullscreenStatusHost = host
-        }
-
-        private func attachFullscreenStatusHost(
-            _ host: NSHostingView<AnyView>,
-            to overlayContainer: NSView,
-            screen: NSScreen
-        ) {
-            NSLayoutConstraint.deactivate(fullscreenStatusConstraints)
-            fullscreenStatusConstraints.removeAll()
-
-            if host.superview !== overlayContainer {
-                host.removeFromSuperview()
-                overlayContainer.addSubview(host, positioned: .above, relativeTo: nil)
-            }
-
-            fullscreenStatusConstraints = [
-                host.leadingAnchor.constraint(equalTo: overlayContainer.leadingAnchor),
-                host.trailingAnchor.constraint(equalTo: overlayContainer.trailingAnchor),
-                host.topAnchor.constraint(equalTo: overlayContainer.topAnchor, constant: screen.safeAreaInsets.top),
-                host.heightAnchor.constraint(equalToConstant: 120),
-            ]
-            NSLayoutConstraint.activate(fullscreenStatusConstraints)
-        }
-
-        func removeFullscreenOverlay() {
-            removeFullscreenStatusOverlay()
-        }
-
-        private func removeFullscreenStatusOverlay() {
-            guard let fullscreenStatusHost else { return }
-            NSLayoutConstraint.deactivate(fullscreenStatusConstraints)
-            fullscreenStatusConstraints = []
-            fullscreenStatusHost.removeFromSuperview()
-            self.fullscreenStatusHost = nil
-        }
-    }
-}
-#endif
 
 @MainActor
 enum HanaAVPlayerFullscreenState {
@@ -576,7 +408,6 @@ enum HanaAVPlayerFullscreenState {
     }
 }
 
-#if canImport(UIKit)
 @MainActor
 private enum HanaAVPlayerFullscreenRetainer {
     private static var coordinators: [ObjectIdentifier: AnyObject] = [:]
@@ -589,7 +420,6 @@ private enum HanaAVPlayerFullscreenRetainer {
         coordinators.removeValue(forKey: ObjectIdentifier(coordinator))
     }
 }
-#endif
 
 struct HanaPlayerGestureConfiguration: Equatable {
     var longPressRate: Double

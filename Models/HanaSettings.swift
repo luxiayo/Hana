@@ -1,8 +1,5 @@
 import Foundation
 import SwiftUI
-#if canImport(AppKit) && os(macOS)
-import AppKit
-#endif
 
 enum HanaSettingsKey {
     static let siteBaseURL = "hana.settings.siteBaseURL"
@@ -94,42 +91,6 @@ enum HanaAppearanceMode: String, CaseIterable, Identifiable {
         }
     }
 }
-
-#if os(macOS)
-extension HanaAppearanceMode {
-    var nsAppearance: NSAppearance? {
-        switch self {
-        case .system:
-            nil
-        case .light:
-            NSAppearance(named: .aqua)
-        case .dark:
-            NSAppearance(named: .darkAqua)
-        }
-    }
-
-    @MainActor
-    func applyToApplication() {
-        NSApp.appearance = nsAppearance
-        for window in NSApp.windows {
-            window.appearance = nil
-            Self.clearExplicitAppearance(in: window.contentViewController?.view)
-            Self.clearExplicitAppearance(in: window.contentView)
-            window.contentView?.needsDisplay = true
-            window.contentViewController?.view.needsDisplay = true
-            window.invalidateShadow()
-        }
-    }
-
-    private static func clearExplicitAppearance(in view: NSView?) {
-        guard let view else { return }
-        view.appearance = nil
-        for subview in view.subviews {
-            clearExplicitAppearance(in: subview)
-        }
-    }
-}
-#endif
 
 enum HanaThemeColor: String, CaseIterable, Identifiable {
     case pink

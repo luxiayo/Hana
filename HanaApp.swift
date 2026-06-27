@@ -59,20 +59,6 @@ struct HanaApp: App {
                     setupReloadAction()
                 }
         }
-#if os(macOS)
-        .defaultSize(width: 1300, height: 720)
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button("设置...") {
-                    HanaSettingsWindowController.shared.open(
-                        services: services,
-                        reloadServicesAction: reloadServicesAction
-                    )
-                }
-                .keyboardShortcut(",", modifiers: .command)
-            }
-        }
-#endif
     }
 
     private var reloadServicesAction: HanaServiceReloadAction {
@@ -86,70 +72,3 @@ struct HanaApp: App {
         }
     }
 }
-
-#if os(macOS)
-@MainActor
-private final class HanaSettingsWindowController {
-    static let shared = HanaSettingsWindowController()
-
-    private var window: NSWindow?
-
-    private init() {}
-
-    func open(
-        services: HanaServices,
-        reloadServicesAction: HanaServiceReloadAction
-    ) {
-        let rootView = makeRootView(
-            services: services,
-            reloadServicesAction: reloadServicesAction
-        )
-
-        if let window {
-            if let hostingController = window.contentViewController as? NSHostingController<AnyView> {
-                hostingController.rootView = rootView
-            }
-            show(window)
-            return
-        }
-
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 800, height: 600)),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "设置"
-        window.titleVisibility = .visible
-        window.titlebarAppearsTransparent = false
-        window.isOpaque = true
-        window.backgroundColor = .windowBackgroundColor
-        window.isReleasedWhenClosed = false
-        window.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
-        window.minSize = NSSize(width: 680, height: 600)
-        window.contentViewController = NSHostingController(rootView: rootView)
-        window.center()
-
-        self.window = window
-        show(window)
-    }
-
-    private func show(_ window: NSWindow) {
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    private func makeRootView(
-        services: HanaServices,
-        reloadServicesAction: HanaServiceReloadAction
-    ) -> AnyView {
-        AnyView(
-            SettingsScreen()
-                .environmentObject(services)
-                .environment(\.hanaReloadServices, reloadServicesAction)
-                .frame(minWidth: 680, minHeight: 600)
-                .ignoresSafeArea()
-        )
-    }
-}
-#endif

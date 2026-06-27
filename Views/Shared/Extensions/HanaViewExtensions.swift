@@ -1,9 +1,5 @@
 import SwiftUI
-#if canImport(UIKit)
 import UIKit
-#elseif canImport(AppKit)
-import AppKit
-#endif
 
 extension View {
     @ViewBuilder
@@ -17,26 +13,12 @@ extension View {
 
     @ViewBuilder
     func hanaNavigationSubtitle(_ subtitle: String?) -> some View {
-#if os(macOS)
-        if let subtitle {
-            navigationSubtitle(subtitle)
-        } else {
-            self
-        }
-#else
         self
-#endif
     }
 
     @ViewBuilder
     func hanaSystemBackground() -> some View {
-#if canImport(UIKit)
         background(Color(uiColor: .systemBackground))
-#elseif canImport(AppKit)
-        background(Color(nsColor: .windowBackgroundColor))
-#else
-        background(Color.clear)
-#endif
     }
 
     @ViewBuilder
@@ -70,61 +52,32 @@ extension View {
 
     @ViewBuilder
     func hanaEmailKeyboard() -> some View {
-#if canImport(UIKit)
         keyboardType(.emailAddress)
-#else
-        self
-#endif
     }
 
     @ViewBuilder
     func hanaURLKeyboard() -> some View {
-#if canImport(UIKit)
         keyboardType(.URL)
-#else
-        self
-#endif
     }
 
     @ViewBuilder
     func hanaTextInputAutocapitalizationNever() -> some View {
-#if canImport(UIKit)
         textInputAutocapitalization(.never)
-#else
-        self
-#endif
     }
 
     @ViewBuilder
     func hanaNumberKeyboard() -> some View {
-#if canImport(UIKit)
         keyboardType(.numberPad)
-#else
-        self
-#endif
     }
 }
 
 enum HanaPasteboard {
     static var string: String? {
         get {
-#if canImport(UIKit)
             UIPasteboard.general.string
-#elseif canImport(AppKit)
-            NSPasteboard.general.string(forType: .string)
-#else
-            nil
-#endif
         }
         set {
-#if canImport(UIKit)
             UIPasteboard.general.string = newValue
-#elseif canImport(AppKit)
-            NSPasteboard.general.clearContents()
-            if let newValue {
-                NSPasteboard.general.setString(newValue, forType: .string)
-            }
-#endif
         }
     }
 }

@@ -45,7 +45,15 @@ struct HomeScreen: View {
         }
         .navigationTitle("Hana")
         .hanaMobileNavigationChrome()
-        .homePreviewToolbar()
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                NavigationLink {
+                    PreviewMonthScreen()
+                } label: {
+                    Label("预告", systemImage: "calendar")
+                }
+            }
+        }
         .task {
             if case .idle = state {
                 await loadHome()
@@ -67,24 +75,5 @@ struct HomeScreen: View {
                 state = .failed(error.localizedDescription)
             }
         }
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func homePreviewToolbar() -> some View {
-#if os(macOS)
-        self
-#else
-        toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                NavigationLink {
-                    PreviewMonthScreen()
-                } label: {
-                    Label("预告", systemImage: "calendar")
-                }
-            }
-        }
-#endif
     }
 }

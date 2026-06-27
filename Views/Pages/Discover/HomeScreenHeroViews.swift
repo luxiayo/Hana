@@ -1,14 +1,6 @@
 import SwiftUI
-
-#if canImport(UIKit)
 import UIKit
 private let homeHeroSystemBackground = Color(uiColor: .systemBackground)
-#elseif canImport(AppKit)
-import AppKit
-private let homeHeroSystemBackground = Color(nsColor: .windowBackgroundColor)
-#else
-private let homeHeroSystemBackground = Color.white
-#endif
 
 struct ScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
@@ -227,7 +219,7 @@ private struct HomeHeroBackgroundLayer: View {
             .offset(y: -progress * 20)
         }
         .frame(width: width, height: stretchedHeight, alignment: .top)
-        .homeHeroBannerMacOSLayerClipping()
+        .clipped()
         .offset(y: -pullDistance)
     }
 
@@ -290,7 +282,6 @@ private struct HomeHeroBannerBackground: View {
         }
         .frame(width: width, height: stretchedHeight, alignment: .top)
         .clipped()
-        .homeHeroBannerMacOSBackgroundExtension()
     }
 }
 
@@ -462,7 +453,7 @@ private struct HomeContentSurfaceBackground: View {
     var body: some View {
         UnevenRoundedRectangle(
             cornerRadii: .init(
-                topLeading: leadingCornerRadius,
+                topLeading: cornerRadius,
                 bottomLeading: 0,
                 bottomTrailing: 0,
                 topTrailing: cornerRadius
@@ -470,15 +461,6 @@ private struct HomeContentSurfaceBackground: View {
             style: .continuous
         )
         .fill(homeHeroSystemBackground)
-        .homeContentSurfaceMacOSBackgroundExtension()
-    }
-
-    private var leadingCornerRadius: CGFloat {
-#if os(macOS)
-        0
-#else
-        cornerRadius
-#endif
     }
 }
 
@@ -522,10 +504,6 @@ private struct HomeSectionVideosView: View {
     let railSpacing: CGFloat
 
     var body: some View {
-#if os(macOS)
-        HanaVideoGridLinks(videos: videos)
-            .padding(.horizontal)
-#else
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: railSpacing) {
                 ForEach(videos) { video in
@@ -538,35 +516,5 @@ private struct HomeSectionVideosView: View {
             }
             .padding(.horizontal)
         }
-#endif
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func homeHeroBannerMacOSBackgroundExtension() -> some View {
-#if os(macOS)
-        backgroundExtensionEffect()
-#else
-        self
-#endif
-    }
-
-    @ViewBuilder
-    func homeHeroBannerMacOSLayerClipping() -> some View {
-#if os(macOS)
-        self
-#else
-        clipped()
-#endif
-    }
-
-    @ViewBuilder
-    func homeContentSurfaceMacOSBackgroundExtension() -> some View {
-#if os(macOS)
-        backgroundExtensionEffect()
-#else
-        self
-#endif
     }
 }
