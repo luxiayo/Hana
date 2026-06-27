@@ -84,7 +84,7 @@ final class HKeyframeRecordModel: Codable, Identifiable {
         keyframes = items
     }
 
-    private static func decode(_ text: String) -> [HKeyframeEntry] {
+nonisolated private static func decode(_ text: String) -> [HKeyframeEntry] {
         guard let data = text.data(using: .utf8),
               let entries = try? JSONDecoder().decode([HKeyframeEntry].self, from: data) else {
             return []
@@ -92,7 +92,7 @@ final class HKeyframeRecordModel: Codable, Identifiable {
         return entries.sorted { $0.positionMilliseconds < $1.positionMilliseconds }
     }
 
-    private static func encode(_ entries: [HKeyframeEntry]) -> String {
+nonisolated private static func encode(_ entries: [HKeyframeEntry]) -> String {
         let sorted = entries.sorted { $0.positionMilliseconds < $1.positionMilliseconds }
         guard let data = try? JSONEncoder().encode(sorted),
               let text = String(data: data, encoding: .utf8) else {
@@ -103,7 +103,7 @@ final class HKeyframeRecordModel: Codable, Identifiable {
 }
 
 extension String {
-    var nilIfEmpty: String? {
+    nonisolated var nilIfEmpty: String? {
         let text = trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : text
     }

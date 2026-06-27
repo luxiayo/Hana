@@ -227,7 +227,7 @@ private enum HanaProxyDictionaryKey {
 }
 
 enum HanaDownloadDirectoryPreference {
-    static func saveExternalDirectory(_ url: URL, defaults: UserDefaults = .standard) throws {
+    nonisolated static func saveExternalDirectory(_ url: URL, defaults: UserDefaults = .standard) throws {
         let bookmarkData = try url.bookmarkData(
             options: [],
             includingResourceValuesForKeys: nil,
@@ -236,11 +236,11 @@ enum HanaDownloadDirectoryPreference {
         defaults.set(bookmarkData, forKey: "hana.settings.downloadDirectoryBookmark")
     }
 
-    static func clear(defaults: UserDefaults = .standard) {
+    nonisolated static func clear(defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: "hana.settings.downloadDirectoryBookmark")
     }
 
-    static func resolvedExternalDirectory(defaults: UserDefaults = .standard) -> URL? {
+    nonisolated static func resolvedExternalDirectory(defaults: UserDefaults = .standard) -> URL? {
         guard let data = defaults.data(forKey: "hana.settings.downloadDirectoryBookmark") else {
             return nil
         }

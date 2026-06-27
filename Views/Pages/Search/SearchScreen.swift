@@ -256,7 +256,6 @@ struct SearchScreen: View {
         let criteria = criteria.normalized()
         guard !criteria.isEmpty else { return }
         let query = criteria.summary
-        let key = criteria.historyKey
         let p = JSONPersistenceManager.shared
         p.insertSearchHistory(SearchHistoryRecordModel(query: query))
         p.insertAdvancedSearchHistory(AdvancedSearchHistoryRecordModel(criteria: criteria))
@@ -282,11 +281,6 @@ struct SearchScreen: View {
         var updated = histories
         for index in offsets where updated.indices.contains(index) {
             let history = updated[index]
-            let query = history.summary
-            if let existing = p.loadSearchHistory().first(where: { $0.query == query }) {
-                let all = p.loadSearchHistory().filter { $0.query != query }
-                // delete by rewriting
-            }
             p.deleteAdvancedSearchHistory(history)
             updated.removeAll { $0.id == history.id }
         }
@@ -298,11 +292,8 @@ struct SearchScreen: View {
 
     private func clearAllHistories() {
         let p = JSONPersistenceManager.shared
-        for h in p.loadSearchHistory() {
-            // clear
-        }
-        for h in p.loadAdvancedSearchHistory() {
-            p.deleteAdvancedSearchHistory(h)
+        for record in p.loadAdvancedSearchHistory() {
+            p.deleteAdvancedSearchHistory(record)
         }
         p.save()
         Task { @MainActor in
