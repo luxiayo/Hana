@@ -751,6 +751,7 @@ final class HanimeDownloadClient: ObservableObject {
         task.taskDescription = try Self.taskDescription(for: request)
         activeTasks[request.id] = task
         progressByID[request.id] = 0
+        objectWillChange.send()
         requestIDsByTaskID[task.taskIdentifier] = request.id
         if let snapshot = try? stateStore.markRunning(
             request: request,
@@ -785,6 +786,7 @@ final class HanimeDownloadClient: ObservableObject {
     }
 
     func cancel(id: String) {
+        objectWillChange.send()
         activeTasks[id]?.cancel()
         activeTasks[id] = nil
         progressByID[id] = nil
@@ -845,6 +847,7 @@ final class HanimeDownloadClient: ObservableObject {
                 expectedByteCount: expected
             ) {
                 progressByID[request.id] = snapshot.progress
+                objectWillChange.send()
             }
         }
     }
@@ -900,6 +903,7 @@ final class HanimeDownloadClient: ObservableObject {
             expectedByteCount: expectedByteCount
         )
         syncTaskToPersistence(requestID: requestID)
+        objectWillChange.send()
     }
 
     fileprivate func completeTask(
@@ -924,6 +928,7 @@ final class HanimeDownloadClient: ObservableObject {
         }
         continuationsByTaskID.removeValue(forKey: taskIdentifier)?.resume(returning: file)
         syncTaskToPersistence(requestID: request.id)
+        objectWillChange.send()
     }
 
     fileprivate func completeTask(
@@ -955,6 +960,7 @@ final class HanimeDownloadClient: ObservableObject {
 
         if let resolvedRequestID {
             syncTaskToPersistence(requestID: resolvedRequestID)
+            objectWillChange.send()
         }
 
         if let error {
