@@ -800,7 +800,6 @@ final class HanimeDownloadClient: ObservableObject {
                 errorDescription: nil
             )
         }
-        syncTaskToPersistence(requestID: id)
     }
 
     func deleteLocalDownload(fileURL: URL) throws {

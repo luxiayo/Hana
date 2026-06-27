@@ -349,6 +349,8 @@ struct DownloadsScreen: View {
 
     private func delete(items: [DownloadQueueRecordModel]) {
         for item in items {
+            // Remove from queue first, so cancel's objectWillChange won't reload stale data
+            persistence.deleteDownloadQueue(item)
             services.downloadClient.cancel(id: item.id)
             // Try to find and delete local file
             if let localURL = localFileURL(for: item) {
