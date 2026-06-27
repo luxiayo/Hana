@@ -14,7 +14,7 @@ final class HanimeRepository {
     private static let maximumVideoCacheCount = 12
 
     private let httpClient: HanaHTTPClient
-    private let parser: HanimeHTMLParser
+    var parser: HanimeHTMLParser
     private var videoCache: [String: CachedVideo] = [:]
 
     init(httpClient: HanaHTTPClient, parser: HanimeHTMLParser) {

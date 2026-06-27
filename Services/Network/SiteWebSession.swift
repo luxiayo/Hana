@@ -3,7 +3,7 @@ import WebKit
 import Combine
 
 final class SiteWebSession: ObservableObject {
-    let baseURL: URL
+    var baseURL: URL
     @Published var activeFlow: SiteWebFlow? = nil
     @Published var lastSyncedCookieCount = 0
     @Published var lastCookieSyncAt: Date?

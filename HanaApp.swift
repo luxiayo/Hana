@@ -67,7 +67,7 @@ struct HanaApp: App {
 
     private func setupReloadAction() {
         reloadAction = HanaServiceReloadAction { [services] baseURL in
-            services.siteSession.cancel()
+            services.reconfigure(baseURL: baseURL)
             servicesIdentity = UUID()
         }
     }

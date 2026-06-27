@@ -20,6 +20,8 @@ final class HanaServices: ObservableObject {
     private var memoryWarningObserver: NSObjectProtocol?
 #endif
 
+    private var cancellables = Set<AnyCancellable>()
+
     init(baseURL: URL = HanaServices.configuredBaseURL()) {
         let httpClient = HanaHTTPClient(baseURL: baseURL)
         let imagePipeline = HanaImagePipeline.make()
@@ -36,6 +38,16 @@ final class HanaServices: ObservableObject {
             imagePipeline: imagePipeline,
             makeImageURLRequest: httpClient.imageURLRequest(for:cachePolicy:timeoutInterval:)
         )
+
+        // Forward nested ObservableObject changes
+        siteSession.objectWillChange
+            .merge(with: networkMonitor.objectWillChange)
+            .merge(with: updateChecker.objectWillChange)
+            .merge(with: profileAvatarStore.objectWillChange)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
 #if os(iOS)
         self.memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
@@ -61,6 +73,14 @@ final class HanaServices: ObservableObject {
         videoPlaybackStore.removeAll()
         siteSession.logout()
         profileAvatarStore.clear()
+    }
+
+    func reconfigure(baseURL: URL) {
+        UserDefaults.standard.set(baseURL.absoluteString, forKey: HanaSettingsKey.siteBaseURL)
+        httpClient.baseURL = baseURL
+        repository.parser = HanimeHTMLParser(baseURL: baseURL)
+        siteSession.baseURL = baseURL
+        objectWillChange.send()
     }
 
     static func configuredBaseURL(defaults: UserDefaults = .standard) -> URL {
