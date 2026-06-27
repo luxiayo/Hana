@@ -48,6 +48,30 @@ xcodebuild -project Hana.xcodeproj -scheme Hana -destination 'generic/platform=i
 - `Package.resolved` 应保留提交，方便复现依赖版本
 - 项目最低支持 iOS 16.0，请注意不要引入新版本专有 API
 
+## 已知问题 / 待修复事项
+
+### 下载模块
+
+#### 1. 下载状态无法实时更新
+点击下载按钮后，UI 中条目状态一直显示为「等待下载」，不会更新为「下载中」。
+
+**可能原因**：`HanimeDownloadClient` 的进度更新（`updateProgress`）写入 `HanimeDownloadTaskStateStore`（tasks.json）后，通过 `syncTaskToPersistence()` 同步到 `JSONPersistenceManager`（downloadQueue.json），但 `DownloadsScreen` 的 Combine 订阅或 SwiftUI 渲染链路未正确触发差异化更新。`@Published` 字典的 in-place mutation（`dict[key] = value`）不触发 `objectWillChange`，已添加显式 `.send()` 但 UI 仍未响应。
+
+#### 2. 下载完成后状态仍不更新
+后台下载成功（本地文件系统中已存在视频文件），重新进入页面或下拉刷新后，UI 中的状态仍然显示为「等待下载」。
+
+**可能原因**：下载完成回调 `completeTask` 中 `stateStore.markCompleted` 和 `syncTaskToPersistence` 已执行（tasks.json 和 downloadQueue.json 均已正确写入），但 `DownloadsScreen` 未能从 `JSONPersistenceManager` 重新加载最新数据。
+
+#### 3. 删除记录后残留缓存
+左滑删除条目后，文件系统已被清理，但重新进入「已下载的视频」页面，该条目仍然显示在列表中，状态变为「已取消」。
+
+**可能原因**：`cancel()` 方法调用了 `objectWillChange.send()`，触发了 `onReceive` 中的 `loadDownloadRecords()`。当删除函数执行 `persistence.deleteDownloadQueue(item)` 时，`onReceive` 的并发竞态导致已删除的记录在 UI 中短暂恢复。
+
+#### 4. 重新下载后状态仍错误
+在删除后点击「重新下载」按钮，虽然文件确实被重新下载（本地能查看文件），但 UI 中状态依然显示为「已取消」。
+
+**可能原因**：`download()` 启动新任务时调用了 `syncTaskToPersistence(requestID:)`，但由于之前 `cancel()` 已将 `stateStore`（tasks.json）中该任务的 ID 标记为「cancelled」，`download()` 调用 `stateStore.markRunning()` 时可能复用了旧的 cancelled 状态记录，导致同步后的 `downloadQueue.json` 状态异常。
+
 ## 许可证
 
 Hana 采用 GNU Affero General Public License v3.0 or later 发布。完整许可证见 [LICENSE](LICENSE)。
