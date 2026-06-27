@@ -61,6 +61,9 @@ struct DownloadsScreen: View {
                 loadDownloadRecords()
                 await synchronizeDownloadRecords(showStatus: false)
             }
+            .onReceive(services.downloadClient.objectWillChange) { _ in
+                loadDownloadRecords()
+            }
             .alert("当前网络可能按流量计费", isPresented: mobileDataAlertBinding) {
                 Button("继续下载") {
                     continueAfterMobileDataWarning()

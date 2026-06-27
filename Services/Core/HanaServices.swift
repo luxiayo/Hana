@@ -44,6 +44,7 @@ final class HanaServices: ObservableObject {
             .merge(with: networkMonitor.objectWillChange)
             .merge(with: updateChecker.objectWillChange)
             .merge(with: profileAvatarStore.objectWillChange)
+            .merge(with: downloadClient.objectWillChange)
             .sink { [weak self] _ in
                 self?.objectWillChange.send()
             }
